@@ -81,3 +81,28 @@ TraceGuard does not execute remediation. A low-confidence classification or evid
 5. Weeks 10–11: test calibrated abstention thresholds and evidence-quality ablations.
 6. Weeks 12–13: add PostgreSQL/OpenSearch ingestion and Prometheus metrics.
 7. Week 14: finalize experiments, report, demo video, and GitHub release.
+
+to do-
+Use public real logs
+Use LogHub HDFS, BGL, OpenStack, or Android logs.
+
+Benchmark baselines honestly
+Compare:
+TF-IDF + Logistic Regression
+Isolation Forest
+Random Forest
+DeepLog/LSTM or Transformer model
+(done till here)
+Add meaningful evaluation
+Report F1, PR-AUC, root-cause Top-1/Top-3 accuracy, Recall@k, calibration, abstention coverage, and latency.
+
+Improve evidence retrieval
+Replace fixed keywords with embeddings, hybrid retrieval, reranking, and cited log-template evidence.
+
+Add realistic observability
+Ingest logs through an API/queue, store incidents in PostgreSQL, use MLflow experiment tracking, and expose Prometheus metrics.
+
+Write a research-style report
+Your real project claim becomes:
+
+“I evaluated evidence-grounded abstention for log-based root-cause analysis across public AIOps datasets, comparing classical and deep-learning baselines under distribution shift.”
