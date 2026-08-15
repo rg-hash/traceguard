@@ -1,5 +1,11 @@
 """Holdout evaluation; avoids reporting metrics on the training data."""
+import sys
+from pathlib import Path
+
 from sklearn.metrics import classification_report, f1_score
+
+# Permit `python scripts/<script>.py` from the repository root.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import DATASET_PATH
 from app.data import load_dataset
