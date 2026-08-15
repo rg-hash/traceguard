@@ -18,7 +18,6 @@ log events -> feature extraction -> anomaly detector -> root-cause ranker
 - A conservative abstention policy based on calibrated probability and evidence support.
 - FastAPI service, Docker image, tests, and GitHub Actions quality gate.
 
-The generated data is a starter dataset; it **does not** represent Oracle systems or production telecom data.
 
 ## Quick start
 
