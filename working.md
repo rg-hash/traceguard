@@ -19,7 +19,7 @@ Uncertain → send to human reviewer
 
 | Block | Non-technical meaning | Technical implementation |
 |---|---|---|
-| Synthetic data generator | Creates safe fake incident logs so you can develop publicly without exposing Oracle/customer information. | `app/data.py` creates 240 JSONL log windows with normal, database, network, and application-failure patterns. |
+| Synthetic data generator | Creates safe fake incident logs so you can develop publicly  | `app/data.py` creates 240 JSONL log windows with normal, database, network, and application-failure patterns. |
 | Data loader | Reads available incidents for training or analysis. | Loads `data/generated/incidents.jsonl`; automatically creates it if missing. |
 | Feature extraction | Converts human-readable logs into a form an ML model can process. | Joins incident log messages and uses TF-IDF to represent important words and phrases numerically. |
 | Anomaly detector | Answers: “Does this set of logs look abnormal?” | Logistic Regression predicts anomaly probability. |
