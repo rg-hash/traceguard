@@ -82,27 +82,55 @@ TraceGuard does not execute remediation. A low-confidence classification or evid
 6. Weeks 12–13: add PostgreSQL/OpenSearch ingestion and Prometheus metrics.
 7. Week 14: finalize experiments, report, demo video, and GitHub release.
 
-to do-
-Use public real logs
-Use LogHub HDFS, BGL, OpenStack, or Android logs.
+Finish HDFS baseline
+Save the Logistic Regression results at threshold 0.4.
+Add confusion matrix and false-positive/false-negative examples.
 
-Benchmark baselines honestly
-Compare:
-TF-IDF + Logistic Regression
-Isolation Forest
-Random Forest
-DeepLog/LSTM or Transformer model
+Add classical comparisons
+TF-IDF + Logistic Regression — done.
+TF-IDF + Random Forest.
+Isolation Forest trained only on normal logs.
+
+Use event sequences
+Use HDFS Event_traces.csv.
+Train an LSTM/DeepLog-style model.
+Compare it fairly using the same train/test split.
 (done till here)
-Add meaningful evaluation
-Report F1, PR-AUC, root-cause Top-1/Top-3 accuracy, Recall@k, calibration, abstention coverage, and latency.
 
-Improve evidence retrieval
-Replace fixed keywords with embeddings, hybrid retrieval, reranking, and cited log-template evidence.
+Add a second public dataset
+Use BGL or OpenStack.
+Train on HDFS and test on the second dataset where feasible.
+This demonstrates distribution-shift analysis.
 
-Add realistic observability
-Ingest logs through an API/queue, store incidents in PostgreSQL, use MLflow experiment tracking, and expose Prometheus metrics.
+Add evidence retrieval
+Parse logs into templates.
+Store template text and incidents in PostgreSQL + pgvector.
+Retrieve similar past anomalous incidents.
+Show retrieved evidence and confidence in the API response.
 
-Write a research-style report
+Add abstention
+If confidence is low, evidence is weak, or models disagree:
+NEEDS_HUMAN_REVIEW
+Report coverage, abstention rate, and unsafe confident-answer rate.
+
+Add engineering depth
+FastAPI ingestion endpoint
+PostgreSQL incident store
+MLflow for experiment tracking
+Prometheus metrics for API latency, alerts, abstentions, and model version
+Docker, tests, GitHub Actions
+
+Write the report
+Dataset and preprocessing
+Baseline comparison
+Threshold decision
+Cross-dataset results
+Retrieval/evidence evaluation
+Failure analysis and limitations
+
+One important correction: HDFS gives anomaly labels, not root-cause labels. Do not claim HDFS root-cause Top-1/Top-3 accuracy. For root-cause evaluation, use a labelled AIOps/wireless-fault dataset or create a clearly labelled synthetic benchmark.
+Your final project claim can be:
+Developed TraceGuard, an evidence-grounded AIOps system for log anomaly detection and safe incident triage. Evaluated classical and sequence-based models on public log datasets, analyzed performance under distribution shift, and used confidence-based abstention to route uncertain incidents for human review
 Your real project claim becomes:
 
 “I evaluated evidence-grounded abstention for log-based root-cause analysis across public AIOps datasets, comparing classical and deep-learning baselines under distribution shift.”
