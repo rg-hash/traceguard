@@ -23,6 +23,7 @@ from app.adaptation import select_balanced_support_set
 from app.cross_domain import incident_to_cross_domain_text
 from app.ood import fit_similarity_ood_threshold
 from app.risk_control import wilson_upper_bound
+from app.temporal_backtesting import expanding_window_folds
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--seed",
@@ -30,7 +31,14 @@ parser.add_argument(
     default=7,
     help="Random seed for selecting the BGL labelled support set.",
 )
+parser.add_argument(
+    "--mode",
+    choices=["selection", "backtest"],
+    default="selection",
+    help="Run the original development selection or temporal backtest.",
+)
 args = parser.parse_args()
+MODE = args.mode
 SEED = args.seed
 
 BGL_PATH = ROOT / "data/processed/bgl_development_windows.jsonl"
@@ -39,7 +47,10 @@ ARTIFACT_DIR = ROOT / "artifacts/cross_domain"
 RESULTS_PATH = (
     ARTIFACT_DIR / f"bgl_development_selection_seed_{SEED}.json"
 )
-
+BACKTEST_SUPPORT_SIZE = 600
+BACKTEST_RESULTS_PATH = (
+    ARTIFACT_DIR / f"bgl_temporal_backtest_600_seed_{SEED}.json"
+)
 SUPPORT_SIZES = [60, 300, 600]
 TOP_K = 3
 MAX_VALIDATION_UNSAFE_RATE = 0.05
@@ -343,9 +354,167 @@ def print_result(
             print(f"  {key}: {value:.4f}")
         else:
             print(f"  {key}: {value}")
+            
+def format_optional_metric(value: float | None) -> str:
+    return "N/A" if value is None else f"{value:.4f}"
 
+def run_temporal_backtest() -> None:
+    """
+    Evaluate one fixed 600-label BGL configuration across three
+    expanding chronological development folds.
+    """
+    bgl_incidents = load_jsonl(BGL_PATH)
+    bgl_incidents.sort(key=bgl_time_key)
+
+    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+
+    results = {
+        "experiment": "bgl_expanding_window_temporal_backtest",
+        "support_size": BACKTEST_SUPPORT_SIZE,
+        "seed": SEED,
+        "dataset": str(BGL_PATH),
+        "folds": {},
+    }
+
+    print("BGL Expanding-Window Temporal Backtest")
+    print("=" * 40)
+    print(f"Support-selection seed: {SEED}")
+    print(f"Support size: {BACKTEST_SUPPORT_SIZE}")
+
+    for fold in expanding_window_folds(len(bgl_incidents)):
+        support_pool = bgl_incidents[:fold.support_end]
+        validation = bgl_incidents[
+            fold.support_end:fold.validation_end
+        ]
+        evaluation = bgl_incidents[
+            fold.validation_end:fold.evaluation_end
+        ]
+
+        support_incidents = select_balanced_support_set(
+            support_pool,
+            total_size=BACKTEST_SUPPORT_SIZE,
+            seed=SEED,
+        )
+
+        vectorizer = TfidfVectorizer(
+            lowercase=False,
+            ngram_range=(1, 2),
+            min_df=2,
+            sublinear_tf=True,
+            norm="l2",
+        )
+
+        x_support = vectorizer.fit_transform(texts(support_incidents))
+        x_validation = vectorizer.transform(texts(validation))
+        x_evaluation = vectorizer.transform(texts(evaluation))
+
+        y_support = labels(support_incidents)
+        y_validation = labels(validation)
+        y_evaluation = labels(evaluation)
+
+        classifier = LogisticRegression(
+            max_iter=2000,
+            class_weight="balanced",
+            random_state=7,
+        )
+        classifier.fit(x_support, y_support)
+
+        validation_probabilities = classifier.predict_proba(
+            x_validation
+        )[:, 1]
+
+        anomaly_threshold, validation_f1 = select_anomaly_threshold(
+            y_true=y_validation,
+            probabilities=validation_probabilities,
+        )
+
+        validation_similarity, validation_evidence_labels = (
+            retrieve_top_evidence(
+                query_matrix=x_validation,
+                support_matrix=x_support,
+                support_labels=y_support,
+            )
+        )
+
+        ood_cutoff = fit_similarity_ood_threshold(
+            validation_similarity,
+            allowed_source_ood_rate=ALLOWED_TARGET_OOD_RATE,
+        )
+
+        safety_policy = calibrate_safety_policy(
+            y_true=y_validation,
+            probabilities=validation_probabilities,
+            maximum_similarity=validation_similarity,
+            evidence_labels=validation_evidence_labels,
+            anomaly_threshold=anomaly_threshold,
+            ood_cutoff=ood_cutoff,
+        )
+
+        evaluation_probabilities = classifier.predict_proba(
+            x_evaluation
+        )[:, 1]
+
+        evaluation_similarity, evaluation_evidence_labels = (
+            retrieve_top_evidence(
+                query_matrix=x_evaluation,
+                support_matrix=x_support,
+                support_labels=y_support,
+            )
+        )
+
+        no_abstention = classification_metrics(
+            y_true=y_evaluation,
+            probabilities=evaluation_probabilities,
+            threshold=anomaly_threshold,
+        )
+
+        selective = selective_metrics(
+            y_true=y_evaluation,
+            probabilities=evaluation_probabilities,
+            maximum_similarity=evaluation_similarity,
+            evidence_labels=evaluation_evidence_labels,
+            anomaly_threshold=anomaly_threshold,
+            policy=safety_policy,
+        )
+
+        results["folds"][fold.name] = {
+            "support_pool_incidents": len(support_pool),
+            "validation_incidents": len(validation),
+            "evaluation_incidents": len(evaluation),
+            "validation_f1": validation_f1,
+            "anomaly_threshold": anomaly_threshold,
+            "ood_cutoff": ood_cutoff,
+            "safety_policy": safety_policy,
+            "evaluation_no_abstention": no_abstention,
+            "evaluation_selective": selective,
+        }
+
+        print()
+        print(
+            f"{fold.name}: support={len(support_pool)}, "
+            f"validation={len(validation)}, "
+            f"evaluation={len(evaluation)}"
+        )
+        print(
+            f"  Evaluation F1: {no_abstention['f1']:.4f} | "
+            f"PR-AUC: {no_abstention['pr_auc']:.4f}"
+        )
+        print(
+            f"  Coverage: {selective['coverage']:.4f} | "
+            f"Unsafe rate: "
+            f"{format_optional_metric(selective['unsafe_decision_rate'])}"
+        )
+
+    BACKTEST_RESULTS_PATH.write_text(
+        json.dumps(results, indent=2),
+        encoding="utf-8",
+    )
+    print(f"\nSaved temporal-backtest results: {BACKTEST_RESULTS_PATH}")
 
 def main() -> None:
+    if MODE == "backtest":
+        run_temporal_backtest()
+        return
     bgl_incidents = load_jsonl(BGL_PATH)
     bgl_incidents.sort(key=bgl_time_key)
 
