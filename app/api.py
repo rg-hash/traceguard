@@ -12,14 +12,25 @@ from app.ml import analyze, train_models
 from app.evidence import rank_evidence_lines
 from app.hybrid_retrieval import HybridRetriever
 from app.log_normalization import incident_to_text
-from app.database import initialize_database, save_incident_decision
+from app.database import (
+    initialize_database,
+    list_incident_decisions,
+    save_incident_decision,
+)
+from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from contextlib import asynccontextmanager
+from app.bgl_triage import get_bgl_triage_service
 from app.metrics import (
     HDFS_DECISIONS_PERSISTED,
     HDFS_RETRIEVAL_FAILURES,
     HDFS_RETRIEVAL_LATENCY_SECONDS,
     HDFS_RETRIEVAL_REQUESTS,
+    BGL_DECISIONS_PERSISTED,
+    BGL_HUMAN_REVIEWS,
+    BGL_TRIAGE_FAILURES,
+    BGL_TRIAGE_LATENCY_SECONDS,
+    BGL_TRIAGE_REQUESTS,
 )
 
 @asynccontextmanager
@@ -27,6 +38,7 @@ async def lifespan(_: FastAPI):
     """Prepare required services before the API accepts traffic."""
     initialize_database()
     get_hdfs_retriever()
+    get_bgl_triage_service()
     yield
 
 
@@ -49,6 +61,14 @@ class IncidentRequest(BaseModel):
     events: list[LogEvent] = Field(min_length=1, max_length=500)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+app.mount(
+    "/dashboard",
+    StaticFiles(
+        directory=PROJECT_ROOT / "static",
+        html=True,
+    ),
+    name="dashboard",
+)
 
 HDFS_TRAIN_DOCUMENTS_PATH = (
     PROJECT_ROOT / "data/index/hdfs_hybrid_train_documents.jsonl"
@@ -108,6 +128,33 @@ def metrics() -> Response:
         content=generate_latest(),
         media_type=CONTENT_TYPE_LATEST,
     )
+
+@app.get("/decisions")
+def decisions(
+    recommendation: str | None = None,
+    source: str | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """
+    Return recently persisted triage decisions for the operator dashboard.
+    """
+    if limit < 1 or limit > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="limit must be between 1 and 100.",
+        )
+
+    try:
+        return list_incident_decisions(
+            recommendation=recommendation,
+            source=source,
+            limit=limit,
+        )
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to load persisted decisions.",
+        ) from error
 
 @app.get("/incidents")
 def incidents() -> list[dict[str, str | int]]:
@@ -239,3 +286,76 @@ def retrieve_hdfs_evidence(payload: IncidentRequest) -> dict:
     response["decision_record_id"] = decision_record_id
 
     return response
+
+@app.post("/triage/bgl")
+def triage_bgl(payload: IncidentRequest) -> dict:
+    """
+    Safely triage caller-provided BGL log events.
+
+    The endpoint returns an automated recommendation only when the
+    classifier and three retrieved historical evidence incidents pass
+    the validated safety policy. It never performs remediation.
+    """
+    started_at = time.perf_counter()
+
+    incident_events = [
+        event.model_dump()
+        for event in payload.events
+    ]
+
+    try:
+        result = get_bgl_triage_service().triage(
+            incident_id=payload.incident_id,
+            events=incident_events,
+        )
+    except ValueError as error:
+        BGL_TRIAGE_FAILURES.labels(reason="invalid_input").inc()
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+    except Exception as error:
+        BGL_TRIAGE_FAILURES.labels(reason="analysis").inc()
+
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to analyze the BGL incident.",
+        ) from error
+
+    try:
+        decision_record_id = save_incident_decision(
+            incident_id=payload.incident_id,
+            source="bgl_evidence_grounded_triage",
+            recommendation=result["recommendation"],
+            top_similarity=float(
+                result["decision_checks"]["top_similarity"]
+            ),
+            evidence_labels=result["evidence_labels"],
+            policy=result["policy"],
+            evidence=result["evidence"],
+        )
+    except Exception as error:
+        BGL_TRIAGE_FAILURES.labels(reason="database").inc()
+
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to persist the BGL triage decision.",
+        ) from error
+
+    BGL_TRIAGE_REQUESTS.labels(
+        recommendation=result["recommendation"]
+    ).inc()
+
+    BGL_TRIAGE_LATENCY_SECONDS.observe(
+        time.perf_counter() - started_at
+    )
+
+    BGL_DECISIONS_PERSISTED.inc()
+
+    if result["recommendation"] == "NEEDS_HUMAN_REVIEW":
+        BGL_HUMAN_REVIEWS.inc()
+
+    result["decision_record_id"] = decision_record_id
+
+    return result

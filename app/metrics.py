@@ -23,3 +23,31 @@ HDFS_DECISIONS_PERSISTED = Counter(
     "traceguard_hdfs_decisions_persisted_total",
     "Number of HDFS retrieval decisions successfully stored in PostgreSQL.",
 )
+
+BGL_TRIAGE_REQUESTS = Counter(
+    "traceguard_bgl_triage_requests_total",
+    "Number of BGL triage requests by recommendation.",
+    ["recommendation"],
+)
+
+BGL_TRIAGE_LATENCY_SECONDS = Histogram(
+    "traceguard_bgl_triage_latency_seconds",
+    "End-to-end latency of BGL evidence-grounded triage.",
+    buckets=(0.01, 0.05, 0.10, 0.25, 0.50, 1.0, 2.5, 5.0),
+)
+
+BGL_TRIAGE_FAILURES = Counter(
+    "traceguard_bgl_triage_failures_total",
+    "Number of BGL triage failures by failure type.",
+    ["reason"],
+)
+
+BGL_DECISIONS_PERSISTED = Counter(
+    "traceguard_bgl_decisions_persisted_total",
+    "Number of BGL triage decisions successfully stored in PostgreSQL.",
+)
+
+BGL_HUMAN_REVIEWS = Counter(
+    "traceguard_bgl_human_reviews_total",
+    "Number of BGL incidents deferred for human review.",
+)

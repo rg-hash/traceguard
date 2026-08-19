@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+  <title>TraceGuard | Safe BGL Log Triage</title>
+
+  <style>
+    :root {
+      --bg: #0b1020;
+      --surface: #151d33;
+      --surface-2: #1c2743;
+      --text: #e8edf8;
+      --muted: #a9b5ce;
+      --border: #2c3a5e;
+      --blue: #65a9ff;
+      --green: #42d392;
+      --orange: #f8b84e;
+      --red: #ff6b7a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background: var(--bg);
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    }
+
+    header {
+      padding: 32px max(24px, calc((100vw - 1120px) / 2));
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(120deg, #111a35, #0b1020);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 8px;
+      font-size: clamp(2rem, 5vw, 3rem);
+    }
+
+    .subtitle {
+      max-width: 720px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    main {
+      width: min(1120px, calc(100% - 48px));
+      margin: 28px auto 48px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 20px;
+      grid-template-columns: 1.2fr 0.8fr;
+    }
+
+    .card {
+      padding: 22px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    textarea,
+    input {
+      width: 100%;
+      margin-bottom: 14px;
+      padding: 12px;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      outline: none;
+      background: #0d1428;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 220px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    button {
+      padding: 11px 16px;
+      cursor: pointer;
+      color: #07111f;
+      border: 0;
+      border-radius: 8px;
+      background: var(--blue);
+      font-weight: 800;
+      font: inherit;
+    }
+
+    button:hover {
+      filter: brightness(1.08);
+    }
+
+    button.secondary {
+      color: var(--text);
+      border: 1px solid var(--border);
+      background: transparent;
+    }
+
+    .hint,
+    .muted {
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .result-banner {
+      margin-bottom: 18px;
+      padding: 16px;
+      border-radius: 10px;
+      font-weight: 800;
+    }
+
+    .normal {
+      color: #a4f1cf;
+      background: rgba(66, 211, 146, 0.16);
+      border: 1px solid var(--green);
+    }
+
+    .anomaly {
+      color: #ffd0d5;
+      background: rgba(255, 107, 122, 0.16);
+      border: 1px solid var(--red);
+    }
+
+    .review {
+      color: #ffe1a5;
+      background: rgba(248, 184, 78, 0.16);
+      border: 1px solid var(--orange);
+    }
+
+    .metric-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-bottom: 18px;
+    }
+
+    .metric {
+      padding: 12px;
+      border-radius: 8px;
+      background: var(--surface-2);
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 1.1rem;
+    }
+
+    .check {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 8px 0;
+      color: var(--muted);
+    }
+
+    .pass {
+      color: var(--green);
+      font-weight: 700;
+    }
+
+    .fail {
+      color: var(--orange);
+      font-weight: 700;
+    }
+
+    .evidence-card,
+    .queue-item {
+      margin-top: 12px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #10182d;
+    }
+
+    code {
+      white-space: pre-wrap;
+      color: #c8d8f8;
+      font-family: "SFMono-Regular", Consolas, monospace;
+    }
+
+    .queue-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 28px;
+    }
+
+    @media (max-width: 760px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>TraceGuard</h1>
+    <p class="subtitle">
+      Evidence-grounded BGL log triage. The system automates a decision
+      only when model confidence and historical evidence satisfy the
+      safety policy; otherwise, it requests human review.
+    </p>
+  </header>
+
+  <main>
+    <div class="grid">
+      <section class="card">
+        <h2>Analyze BGL logs</h2>
+
+        <label for="incidentId">Incident ID</label>
+        <input
+          id="incidentId"
+          value="dashboard-bgl-demo-001"
+          maxlength="100"
+        >
+
+        <label for="logs">One BGL message per line</label>
+        <textarea id="logs">2005.06.03 R02-M1-N0-C:J12-U11 2005-06-03-15.42.50.363779 R02-M1-N0-C:J12-U11 RAS KERNEL INFO instruction cache parity error corrected</textarea>
+
+        <p class="hint">
+          Paste the log-message portion of each BGL event. Do not include
+          the LogHub leading alert label, because that label is the answer
+          used for offline evaluation.
+        </p>
+
+        <button id="analyzeButton">Analyze safely</button>
+      </section>
+
+      <section class="card">
+        <h2>Decision</h2>
+
+        <p id="emptyState" class="muted">
+          Submit logs to receive a recommendation, safety checks, and
+          cited historical evidence.
+        </p>
+
+        <div id="result" class="hidden">
+          <div id="recommendationBanner" class="result-banner"></div>
+
+          <div id="metrics" class="metric-grid"></div>
+
+          <h3>Safety checks</h3>
+          <div id="checks"></div>
+
+          <h3>Historical evidence</h3>
+          <div id="evidence"></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="queue-header">
+      <div>
+        <h2>Human-review queue</h2>
+        <p class="muted">
+          Incidents for which TraceGuard intentionally abstained.
+        </p>
+      </div>
+
+      <button id="loadReviewsButton" class="secondary">
+        Refresh queue
+      </button>
+    </div>
+
+    <section id="reviewQueue" class="card">
+      <p class="muted">
+        Select “Refresh queue” to load deferred BGL incidents.
+      </p>
+    </section>
+  </main>
+
+  <script>
+    const analyzeButton = document.getElementById("analyzeButton");
+    const loadReviewsButton = document.getElementById(
+      "loadReviewsButton"
+    );
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function recommendationClass(recommendation) {
+      if (recommendation === "LIKELY_NORMAL") {
+        return "normal";
+      }
+
+      if (recommendation === "LIKELY_ANOMALY") {
+        return "anomaly";
+      }
+
+      return "review";
+    }
+
+    function yesNo(value) {
+      return value
+        ? '<span class="pass">PASS</span>'
+        : '<span class="fail">REVIEW</span>';
+    }
+
+    function showResult(result) {
+      document.getElementById("emptyState").classList.add("hidden");
+      document.getElementById("result").classList.remove("hidden");
+
+      const banner = document.getElementById("recommendationBanner");
+      banner.className = (
+        "result-banner "
+        + recommendationClass(result.recommendation)
+      );
+      banner.textContent = result.recommendation.replaceAll("_", " ");
+
+      document.getElementById("metrics").innerHTML = `
+        <div class="metric">
+          <span>Classifier prediction</span>
+          <strong>${escapeHtml(result.classifier_prediction)}</strong>
+        </div>
+        <div class="metric">
+          <span>Anomaly probability</span>
+          <strong>${(result.classifier_anomaly_probability * 100).toFixed(1)}%</strong>
+        </div>
+        <div class="metric">
+          <span>Top evidence similarity</span>
+          <strong>${result.decision_checks.top_similarity.toFixed(4)}</strong>
+        </div>
+        <div class="metric">
+          <span>Decision record</span>
+          <strong>#${escapeHtml(result.decision_record_id)}</strong>
+        </div>
+      `;
+
+      const checks = result.decision_checks;
+
+      document.getElementById("checks").innerHTML = `
+        <div class="check">
+          Classifier confidence
+          ${yesNo(checks.confidence_passed)}
+        </div>
+        <div class="check">
+          Evidence similarity
+          ${yesNo(checks.similarity_passed)}
+        </div>
+        <div class="check">
+          Top-3 evidence agrees
+          ${yesNo(checks.top_3_evidence_unanimous)}
+        </div>
+        <div class="check">
+          Model and evidence agree
+          ${yesNo(checks.classifier_evidence_agree)}
+        </div>
+      `;
+
+      document.getElementById("evidence").innerHTML = result.evidence
+        .map((item) => `
+          <article class="evidence-card">
+            <strong>
+              #${item.rank} · ${escapeHtml(item.historical_label)}
+              · similarity ${item.similarity.toFixed(4)}
+            </strong>
+            <p class="muted">
+              Historical incident:
+              ${escapeHtml(item.historical_incident_id)}
+            </p>
+            ${item.cited_templates.map((template) => `
+              <code>${escapeHtml(template.template)}</code>
+            `).join("<br><br>")}
+          </article>
+        `)
+        .join("");
+    }
+
+    async function analyzeLogs() {
+      const incidentId = document.getElementById("incidentId").value.trim();
+
+      const events = document.getElementById("logs").value
+        .split("\n")
+        .map((message) => message.trim())
+        .filter(Boolean)
+        .map((message) => ({ message }));
+
+      if (!incidentId || events.length === 0) {
+        alert("Provide an incident ID and at least one log message.");
+        return;
+      }
+
+      analyzeButton.disabled = true;
+      analyzeButton.textContent = "Analyzing...";
+
+      try {
+        const response = await fetch("/triage/bgl", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            incident_id: incidentId,
+            events,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.detail || "Triage request failed.");
+        }
+
+        showResult(result);
+      } catch (error) {
+        alert(error.message);
+      } finally {
+        analyzeButton.disabled = false;
+        analyzeButton.textContent = "Analyze safely";
+      }
+    }
+
+    async function loadReviewQueue() {
+      const queue = document.getElementById("reviewQueue");
+
+      queue.innerHTML = "<p class='muted'>Loading review queue...</p>";
+
+      try {
+        const response = await fetch(
+          "/decisions?source=bgl_evidence_grounded_triage"
+          + "&recommendation=NEEDS_HUMAN_REVIEW&limit=20"
+        );
+
+        const decisions = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            decisions.detail || "Unable to load review queue."
+          );
+        }
+
+        if (decisions.length === 0) {
+          queue.innerHTML = `
+            <p class="muted">
+              No BGL incidents currently require human review.
+            </p>
+          `;
+          return;
+        }
+
+        queue.innerHTML = decisions.map((decision) => `
+          <article class="queue-item">
+            <strong>${escapeHtml(decision.incident_id)}</strong>
+            <p class="muted">
+              Created: ${escapeHtml(decision.created_at)}
+              <br>
+              Top similarity: ${Number(
+                decision.top_similarity
+              ).toFixed(4)}
+            </p>
+          </article>
+        `).join("");
+      } catch (error) {
+        queue.innerHTML = `
+          <p class="fail">
+            ${escapeHtml(error.message)}
+          </p>
+        `;
+      }
+    }
+
+    analyzeButton.addEventListener("click", analyzeLogs);
+    loadReviewsButton.addEventListener("click", loadReviewQueue);
+  </script>
+</body>
+</html>

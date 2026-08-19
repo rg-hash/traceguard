@@ -3,7 +3,7 @@ from typing import Any
 
 import psycopg
 from psycopg.types.json import Jsonb
-
+from psycopg.rows import dict_row
 
 def database_url() -> str:
     url = os.getenv("DATABASE_URL")
@@ -91,3 +91,59 @@ def save_incident_decision(
         )
 
         return int(result.fetchone()[0])
+
+
+def list_incident_decisions(
+    *,
+    recommendation: str | None = None,
+    source: str | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """
+    Return recent persisted decisions for the operator dashboard.
+
+    Optional filters allow the UI to show only BGL decisions or only
+    incidents waiting for human review.
+    """
+    conditions = []
+    parameters: list[Any] = []
+
+    if recommendation is not None:
+        conditions.append("recommendation = %s")
+        parameters.append(recommendation)
+
+    if source is not None:
+        conditions.append("source = %s")
+        parameters.append(source)
+
+    where_clause = ""
+
+    if conditions:
+        where_clause = " WHERE " + " AND ".join(conditions)
+
+    parameters.append(limit)
+
+    query = f"""
+        SELECT
+            id,
+            incident_id,
+            source,
+            recommendation,
+            top_similarity,
+            evidence_labels,
+            policy,
+            evidence,
+            created_at
+        FROM incident_decisions
+        {where_clause}
+        ORDER BY created_at DESC
+        LIMIT %s
+    """
+
+    with psycopg.connect(
+        database_url(),
+        row_factory=dict_row,
+    ) as connection:
+        result = connection.execute(query, parameters)
+
+        return list(result.fetchall())
