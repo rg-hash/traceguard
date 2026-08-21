@@ -20,6 +20,9 @@ from sentence_transformers import SentenceTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+from app.database import get_organization_profile
+from app.onboarding import build_organization_knowledge
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -71,6 +74,12 @@ ROOT_CAUSES = {
     ],
 }
 
+COMMON_KEYWORDS = {
+    "after", "api", "application", "check", "error", "failure",
+    "for", "from", "incident", "investigation", "service", "the",
+    "with",
+}
+
 
 def knowledge_to_text(item: dict[str, Any]) -> str:
     """Convert approved incident/runbook data into searchable text."""
@@ -96,6 +105,46 @@ def events_to_text(events: list[dict[str, Any]]) -> str:
         str(event.get("message", ""))
         for event in events
     ).lower()
+
+
+def build_root_cause_keywords(
+    knowledge: list[dict[str, Any]],
+) -> dict[str, list[str]]:
+    """Extend the approved default taxonomy with tenant-labelled causes."""
+    candidates = {
+        cause: list(keywords)
+        for cause, keywords in ROOT_CAUSES.items()
+    }
+
+    for item in knowledge:
+        root_cause = item.get("root_cause")
+        if not root_cause:
+            continue
+
+        source_text = " ".join(
+            [
+                str(item.get("title", "")),
+                *[str(value) for value in item.get("symptoms", [])],
+                *[str(value) for value in item.get("tags", [])],
+            ]
+        ).lower()
+
+        extracted = [
+            token
+            for token in re.findall(r"[a-z][a-z0-9_-]{2,}", source_text)
+            if token not in COMMON_KEYWORDS
+        ]
+
+        candidates[str(root_cause)] = list(
+            dict.fromkeys(
+                [
+                    *candidates.get(str(root_cause), []),
+                    *extracted,
+                ]
+            )
+        )
+
+    return candidates
 
 
 class InvestigationState(TypedDict, total=False):
@@ -141,6 +190,7 @@ class InvestigationService:
         self.minimum_hypothesis_evidence = (
             minimum_hypothesis_evidence
         )
+        self.root_causes = build_root_cause_keywords(knowledge)
 
         self.knowledge_texts = [
             knowledge_to_text(item)
@@ -342,7 +392,7 @@ class InvestigationService:
 
         hypotheses = []
 
-        for root_cause, keywords in ROOT_CAUSES.items():
+        for root_cause, keywords in self.root_causes.items():
             log_score = (
                 sum(
                     keyword in log_text
@@ -432,11 +482,23 @@ class InvestigationService:
             if item["kind"] != "runbook":
                 continue
 
-            is_relevant = any(
-                keyword in item["title"].lower()
-                for cause in hypothesis_causes
-                for keyword in ROOT_CAUSES[cause]
-            )
+            item_root_cause = item.get("root_cause")
+            is_relevant = item_root_cause in hypothesis_causes
+
+            if not is_relevant:
+                item_text = " ".join(
+                    [
+                        item["title"],
+                        *item.get("symptoms", []),
+                        *item.get("tags", []),
+                    ]
+                ).lower()
+
+                is_relevant = any(
+                    keyword in item_text
+                    for cause in hypothesis_causes
+                    for keyword in self.root_causes[cause]
+                )
 
             if not is_relevant:
                 continue
@@ -601,4 +663,30 @@ def get_investigation_service() -> InvestigationService:
     return InvestigationService(
         knowledge=knowledge,
         deployments=deployments,
+    )
+
+
+@lru_cache
+def get_organization_investigation_service(
+    organization_id: str,
+    knowledge_version: int,
+) -> InvestigationService:
+    """
+    Build an isolated evidence index for one approved organization profile.
+
+    The version is part of the cache key, so an updated onboarding profile
+    cannot reuse a stale retrieval index. Tenant evidence is never combined
+    with another organization's data or with the bundled demo corpus.
+    """
+    profile = get_organization_profile(organization_id)
+
+    if profile is None:
+        raise ValueError("Organization onboarding profile was not found.")
+
+    return InvestigationService(
+        knowledge=build_organization_knowledge(
+            services=profile["services"],
+            knowledge=profile["knowledge"],
+        ),
+        deployments=profile["deployments"],
     )

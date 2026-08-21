@@ -1,0 +1,58 @@
+{
+  "organization_id": "acme-shop",
+  "display_name": "Acme Shop",
+  "description": "Example e-commerce platform onboarding profile.",
+  "services": [
+    {
+      "name": "checkout-api",
+      "description": "Creates customer orders and calls the payment service.",
+      "owner": "commerce-team",
+      "dependencies": ["payment-api", "inventory-api"]
+    },
+    {
+      "name": "payment-api",
+      "description": "Authorizes payments through PostgreSQL-backed workers.",
+      "owner": "payments-team",
+      "dependencies": ["payments-postgres"]
+    }
+  ],
+  "knowledge": [
+    {
+      "id": "ACME-INC-001",
+      "kind": "incident",
+      "title": "Payment worker connection leak exhausted the pool",
+      "service": "payment-api",
+      "symptoms": [
+        "database connection timeout",
+        "connection pool exhausted",
+        "payment worker retries failed"
+      ],
+      "root_cause": "payment_worker_connection_leak",
+      "resolution": "Fixed unreleased database sessions and restored safe pool limits.",
+      "tags": ["payment", "database", "connection", "pool"]
+    },
+    {
+      "id": "ACME-RUNBOOK-001",
+      "kind": "runbook",
+      "title": "Payment database pool investigation",
+      "service": "payment-api",
+      "symptoms": ["connection pool exhausted", "database timeout"],
+      "root_cause": "payment_worker_connection_leak",
+      "steps": [
+        "Check active database sessions and pool utilization.",
+        "Compare payment worker retry volume before and after the incident.",
+        "Inspect payment worker logs for unreleased database sessions."
+      ],
+      "tags": ["payment", "database", "pool"]
+    }
+  ],
+  "deployments": [
+    {
+      "id": "acme-deploy-payment-41c9d",
+      "service": "payment-api",
+      "commit": "41c9d",
+      "timestamp": "2026-08-20T10:00:00Z",
+      "summary": "Updated payment worker retry handling."
+    }
+  ]
+}

@@ -302,6 +302,18 @@
           maxlength="100"
         >
 
+        <label for="organizationId">Organization ID (optional)</label>
+        <input
+          id="organizationId"
+          placeholder="for example: acme-shop"
+          maxlength="100"
+        >
+        <p class="hint">
+          Use this after onboarding a product through the API. TraceGuard
+          will retrieve only that organization's approved architecture,
+          runbooks, incidents, and deployment history.
+        </p>
+
         <label for="logs">One BGL message per line</label>
         <textarea id="logs">2005.06.03 R02-M1-N0-C:J12-U11 2005-06-03-15.42.50.363779 R02-M1-N0-C:J12-U11 RAS KERNEL INFO instruction cache parity error corrected</textarea>
 
@@ -665,6 +677,9 @@
     async function requestInvestigation(triageRecommendation, triageContext) {
       const incidentId = document.getElementById("incidentId").value.trim();
       const service = document.getElementById("serviceName").value.trim();
+      const organizationId = document.getElementById(
+        "organizationId"
+      ).value.trim();
       const events = document.getElementById("logs").value
         .split("\n")
         .map((message) => message.trim())
@@ -685,6 +700,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             incident_id: incidentId,
+            organization_id: organizationId || null,
             events,
             triage_recommendation: triageRecommendation,
             triage_context: triageContext,
@@ -765,6 +781,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             incident_id: latestInvestigationResult.incident_id,
+            organization_id: latestInvestigationResult.organization_id || null,
             triage_recommendation: latestInvestigationResult.triage_recommendation,
             hypothesis: document.getElementById("feedbackHypothesis").value || null,
             hypothesis_accepted: document.getElementById("hypothesisAccepted").checked,

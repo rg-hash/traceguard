@@ -319,3 +319,129 @@ def test_feedback_api_returns_persisted_records(monkeypatch):
     assert response.status_code == 200
 
     assert response.json() == expected
+
+
+def test_organization_onboarding_stores_isolated_context(monkeypatch):
+    saved = {}
+
+    def fake_save_organization_profile(**kwargs):
+        saved.update(kwargs)
+        return 1
+
+    monkeypatch.setattr(api, "initialize_database", lambda: None)
+    monkeypatch.setattr(api, "get_hdfs_retriever", lambda: object())
+    monkeypatch.setattr(
+        api, "get_bgl_triage_service", lambda: object()
+    )
+    monkeypatch.setattr(
+        api,
+        "get_investigation_service",
+        lambda: FakeInvestigationService(),
+    )
+    monkeypatch.setattr(
+        api,
+        "save_organization_profile",
+        fake_save_organization_profile,
+    )
+
+    with TestClient(api.app) as client:
+        response = client.post(
+            "/organizations/onboard",
+            json={
+                "organization_id": "acme-shop",
+                "display_name": "Acme Shop",
+                "description": "E-commerce platform.",
+                "services": [
+                    {
+                        "name": "checkout-api",
+                        "description": "Creates customer orders.",
+                        "dependencies": ["payment-api"],
+                    }
+                ],
+                "knowledge": [
+                    {
+                        "id": "ACME-RB-01",
+                        "kind": "runbook",
+                        "title": "Checkout dependency timeout",
+                        "service": "checkout-api",
+                        "symptoms": ["upstream timeout"],
+                        "steps": ["Check payment-api latency."],
+                        "tags": ["checkout", "timeout"],
+                    }
+                ],
+                "deployments": [
+                    {
+                        "id": "acme-deploy-1",
+                        "service": "checkout-api",
+                        "commit": "abc123",
+                        "timestamp": "2026-08-21T10:00:00Z",
+                        "summary": "Checkout update.",
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "organization_id": "acme-shop",
+        "knowledge_version": 1,
+        "status": "onboarded",
+    }
+    assert saved["services"][0]["name"] == "checkout-api"
+    assert saved["knowledge"][0]["id"] == "ACME-RB-01"
+
+
+def test_organization_investigation_uses_versioned_profile(
+    monkeypatch,
+):
+    requested = {}
+
+    monkeypatch.setattr(api, "initialize_database", lambda: None)
+    monkeypatch.setattr(api, "get_hdfs_retriever", lambda: object())
+    monkeypatch.setattr(
+        api, "get_bgl_triage_service", lambda: object()
+    )
+    monkeypatch.setattr(
+        api,
+        "get_investigation_service",
+        lambda: FakeInvestigationService(),
+    )
+    monkeypatch.setattr(
+        api,
+        "get_organization_profile",
+        lambda _: {"knowledge_version": 4},
+    )
+
+    def fake_organization_service(org_id, version):
+        requested["organization_id"] = org_id
+        requested["knowledge_version"] = version
+        return FakeInvestigationService()
+
+    monkeypatch.setattr(
+        api,
+        "get_organization_investigation_service",
+        fake_organization_service,
+    )
+
+    with TestClient(api.app) as client:
+        response = client.post(
+            "/investigate",
+            json={
+                "organization_id": "acme-shop",
+                "incident_id": "acme-incident-1",
+                "events": [
+                    {
+                        "service": "checkout-api",
+                        "severity": "ERROR",
+                        "message": "upstream timeout",
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    assert requested == {
+        "organization_id": "acme-shop",
+        "knowledge_version": 4,
+    }
+    assert response.json()["organization_id"] == "acme-shop"

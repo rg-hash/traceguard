@@ -83,6 +83,28 @@ The response contains a timestamped incident summary, retrieved incident and
 runbook IDs, ranked hypotheses, evidence-linked diagnostic checks, and the
 fixed decision `ENGINEER_REVIEW_REQUIRED`.
 
+### Organization onboarding
+
+TraceGuard can be configured for a specific product without retraining the
+foundation model. `POST /organizations/onboard` stores an organization's
+approved service map, dependencies, resolved incidents, runbooks, and
+deployment history in PostgreSQL. Each organization receives its own versioned
+retrieval corpus; its investigation evidence is not mixed with other tenants or
+with the bundled demo corpus.
+
+```bash
+curl -X POST http://127.0.0.1:8000/organizations/onboard \
+  -H 'Content-Type: application/json' \
+  --data @data/examples/acme_shop_onboarding.json
+```
+
+Then include `"organization_id": "acme-shop"` in `POST /investigate`, or
+enter `acme-shop` in the dashboard's optional Organization ID field. Updating
+the profile increments its knowledge version and produces a fresh retrieval
+index on the next investigation. Human feedback is stored with the same
+organization ID; it is available for future evaluation, but does not trigger
+automatic retraining.
+
 ---
 
 ## System architecture

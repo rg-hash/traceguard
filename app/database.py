@@ -68,6 +68,8 @@ def initialize_database() -> None:
 
                 incident_id TEXT NOT NULL,
 
+                organization_id TEXT,
+
                 triage_recommendation TEXT NOT NULL,
 
                 hypothesis TEXT,
@@ -90,6 +92,15 @@ def initialize_database() -> None:
             """
         )
 
+        # Supports existing local installations created before organizations
+        # were introduced.
+        connection.execute(
+            """
+            ALTER TABLE investigation_feedback
+            ADD COLUMN IF NOT EXISTS organization_id TEXT
+            """
+        )
+
         connection.execute(
             """
             CREATE INDEX IF NOT EXISTS
@@ -101,8 +112,40 @@ def initialize_database() -> None:
         connection.execute(
             """
             CREATE INDEX IF NOT EXISTS
+            idx_investigation_feedback_organization_id
+            ON investigation_feedback (organization_id)
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS
             idx_investigation_feedback_created_at
             ON investigation_feedback (created_at DESC)
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS organizations (
+                organization_id TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                services JSONB NOT NULL,
+                knowledge JSONB NOT NULL,
+                deployments JSONB NOT NULL,
+                knowledge_version INTEGER NOT NULL DEFAULT 1,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS
+            idx_organizations_updated_at
+            ON organizations (updated_at DESC)
             """
         )
 
@@ -204,6 +247,7 @@ def list_incident_decisions(
 def save_investigation_feedback(
     *,
     incident_id: str,
+    organization_id: str | None,
     triage_recommendation: str,
     hypothesis: str | None,
     hypothesis_accepted: bool | None,
@@ -226,6 +270,7 @@ def save_investigation_feedback(
             """
             INSERT INTO investigation_feedback (
                 incident_id,
+                organization_id,
                 triage_recommendation,
                 hypothesis,
                 hypothesis_accepted,
@@ -234,11 +279,12 @@ def save_investigation_feedback(
                 usefulness_rating,
                 reviewer_note
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
                 incident_id,
+                organization_id,
                 triage_recommendation,
                 hypothesis,
                 hypothesis_accepted,
@@ -276,6 +322,7 @@ def list_investigation_feedback(
         SELECT
             id,
             incident_id,
+            organization_id,
             triage_recommendation,
             hypothesis,
             hypothesis_accepted,
@@ -295,5 +342,113 @@ def list_investigation_feedback(
         row_factory=dict_row,
     ) as connection:
         result = connection.execute(query, parameters)
+
+        return list(result.fetchall())
+
+
+def save_organization_profile(
+    *,
+    organization_id: str,
+    display_name: str,
+    description: str,
+    services: list[dict[str, Any]],
+    knowledge: list[dict[str, Any]],
+    deployments: list[dict[str, Any]],
+) -> int:
+    """Create or replace one organization's approved investigation context."""
+    with psycopg.connect(
+        database_url(),
+        autocommit=True,
+    ) as connection:
+        result = connection.execute(
+            """
+            INSERT INTO organizations (
+                organization_id,
+                display_name,
+                description,
+                services,
+                knowledge,
+                deployments
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (organization_id) DO UPDATE SET
+                display_name = EXCLUDED.display_name,
+                description = EXCLUDED.description,
+                services = EXCLUDED.services,
+                knowledge = EXCLUDED.knowledge,
+                deployments = EXCLUDED.deployments,
+                knowledge_version = organizations.knowledge_version + 1,
+                updated_at = NOW()
+            RETURNING knowledge_version
+            """,
+            (
+                organization_id,
+                display_name,
+                description,
+                Jsonb(services),
+                Jsonb(knowledge),
+                Jsonb(deployments),
+            ),
+        )
+
+        return int(result.fetchone()[0])
+
+
+def get_organization_profile(
+    organization_id: str,
+) -> dict[str, Any] | None:
+    """Return the latest approved onboarding profile for one organization."""
+    with psycopg.connect(
+        database_url(),
+        row_factory=dict_row,
+    ) as connection:
+        result = connection.execute(
+            """
+            SELECT
+                organization_id,
+                display_name,
+                description,
+                services,
+                knowledge,
+                deployments,
+                knowledge_version,
+                created_at,
+                updated_at
+            FROM organizations
+            WHERE organization_id = %s
+            """,
+            (organization_id,),
+        )
+
+        return result.fetchone()
+
+
+def list_organization_profiles(
+    *,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """List safe onboarding metadata without returning knowledge contents."""
+    with psycopg.connect(
+        database_url(),
+        row_factory=dict_row,
+    ) as connection:
+        result = connection.execute(
+            """
+            SELECT
+                organization_id,
+                display_name,
+                description,
+                knowledge_version,
+                jsonb_array_length(services) AS service_count,
+                jsonb_array_length(knowledge) AS knowledge_document_count,
+                jsonb_array_length(deployments) AS deployment_count,
+                created_at,
+                updated_at
+            FROM organizations
+            ORDER BY updated_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
 
         return list(result.fetchall())

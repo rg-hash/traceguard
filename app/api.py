@@ -17,15 +17,21 @@ from app.bgl_triage import get_bgl_triage_service
 from app.config import DATASET_PATH, MODEL_PATH
 from app.data import load_dataset
 from app.database import (
+    get_organization_profile,
     initialize_database,
     list_incident_decisions,
     list_investigation_feedback,
+    list_organization_profiles,
     save_incident_decision,
     save_investigation_feedback,
+    save_organization_profile,
 )
 from app.evidence import rank_evidence_lines
 from app.hybrid_retrieval import HybridRetriever
-from app.investigation import get_investigation_service
+from app.investigation import (
+    get_investigation_service,
+    get_organization_investigation_service,
+)
 from app.log_normalization import incident_to_text
 from app.metrics import (
     BGL_DECISIONS_PERSISTED,
@@ -121,6 +127,13 @@ class TriageContext(BaseModel):
 
 
 class InvestigationRequest(IncidentRequest):
+    organization_id: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=100,
+        pattern="^[a-z0-9][a-z0-9-]*$",
+    )
+
     triage_recommendation: str = Field(
         default="NEEDS_HUMAN_REVIEW",
         pattern="^(LIKELY_ANOMALY|NEEDS_HUMAN_REVIEW)$",
@@ -128,10 +141,72 @@ class InvestigationRequest(IncidentRequest):
 
     triage_context: TriageContext | None = None
 
+
+class ServiceDefinition(BaseModel):
+    name: str = Field(
+        min_length=2,
+        max_length=100,
+        pattern="^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+    )
+    description: str = Field(default="", max_length=2000)
+    owner: str = Field(default="", max_length=200)
+    dependencies: list[str] = Field(default_factory=list, max_length=50)
+
+
+class KnowledgeDocument(BaseModel):
+    id: str = Field(min_length=2, max_length=100)
+    kind: str = Field(
+        pattern="^(incident|runbook)$"
+    )
+    title: str = Field(min_length=3, max_length=500)
+    service: str = Field(default="shared", max_length=100)
+    symptoms: list[str] = Field(default_factory=list, max_length=50)
+    root_cause: str | None = Field(default=None, max_length=200)
+    resolution: str = Field(default="", max_length=5000)
+    steps: list[str] = Field(default_factory=list, max_length=30)
+    tags: list[str] = Field(default_factory=list, max_length=50)
+
+
+class DeploymentRecord(BaseModel):
+    id: str = Field(min_length=2, max_length=100)
+    service: str = Field(min_length=2, max_length=100)
+    commit: str = Field(default="", max_length=100)
+    timestamp: str = Field(default="", max_length=100)
+    summary: str = Field(default="", max_length=2000)
+
+
+class OrganizationOnboardingRequest(BaseModel):
+    organization_id: str = Field(
+        min_length=2,
+        max_length=100,
+        pattern="^[a-z0-9][a-z0-9-]*$",
+    )
+    display_name: str = Field(min_length=2, max_length=200)
+    description: str = Field(default="", max_length=2000)
+    services: list[ServiceDefinition] = Field(
+        min_length=1,
+        max_length=100,
+    )
+    knowledge: list[KnowledgeDocument] = Field(
+        default_factory=list,
+        max_length=1000,
+    )
+    deployments: list[DeploymentRecord] = Field(
+        default_factory=list,
+        max_length=1000,
+    )
+
 class InvestigationFeedbackRequest(BaseModel):
     incident_id: str = Field(
         min_length=1,
         max_length=100,
+    )
+
+    organization_id: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=100,
+        pattern="^[a-z0-9][a-z0-9-]*$",
     )
 
     triage_recommendation: str = Field(
@@ -313,7 +388,25 @@ def investigate(payload: InvestigationRequest) -> dict:
     The endpoint preserves the existing BGL/HDFS triage evidence.
     It never runs commands, restarts services, or changes production.
     """
-    return get_investigation_service().investigate(
+    if payload.organization_id:
+        profile = get_organization_profile(payload.organization_id)
+
+        if profile is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Organization onboarding profile was not found.",
+            )
+
+        investigation_service = (
+            get_organization_investigation_service(
+                payload.organization_id,
+                int(profile["knowledge_version"]),
+            )
+        )
+    else:
+        investigation_service = get_investigation_service()
+
+    result = investigation_service.investigate(
         incident_id=payload.incident_id,
         events=[
             event.model_dump()
@@ -326,6 +419,69 @@ def investigate(payload: InvestigationRequest) -> dict:
             else {}
         ),
     )
+
+    result["organization_id"] = payload.organization_id
+
+    return result
+
+
+@app.post("/organizations/onboard")
+def onboard_organization(
+    payload: OrganizationOnboardingRequest,
+) -> dict[str, int | str]:
+    """
+    Store approved product architecture and operational knowledge.
+
+    The data becomes an isolated RAG corpus only for this organization. This
+    endpoint does not crawl private systems or automatically train a model.
+    """
+    try:
+        knowledge_version = save_organization_profile(
+            organization_id=payload.organization_id,
+            display_name=payload.display_name,
+            description=payload.description,
+            services=[
+                service.model_dump()
+                for service in payload.services
+            ],
+            knowledge=[
+                document.model_dump()
+                for document in payload.knowledge
+            ],
+            deployments=[
+                deployment.model_dump()
+                for deployment in payload.deployments
+            ],
+        )
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to store organization onboarding data.",
+        ) from error
+
+    return {
+        "organization_id": payload.organization_id,
+        "knowledge_version": knowledge_version,
+        "status": "onboarded",
+    }
+
+
+@app.get("/organizations")
+def organizations(limit: int = 50) -> list[dict]:
+    """List onboarded organizations without exposing their private corpus."""
+    if limit < 1 or limit > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="limit must be between 1 and 100.",
+        )
+
+    try:
+        return list_organization_profiles(limit=limit)
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to load organization profiles.",
+        ) from error
 @app.post("/investigations/feedback")
 def submit_investigation_feedback(
     payload: InvestigationFeedbackRequest,
@@ -339,6 +495,7 @@ def submit_investigation_feedback(
     try:
         feedback_id = save_investigation_feedback(
             incident_id=payload.incident_id,
+            organization_id=payload.organization_id,
             triage_recommendation=(
                 payload.triage_recommendation
             ),
