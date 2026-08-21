@@ -1,0 +1,134 @@
+[
+  {
+    "incident_id": "dev-db-001",
+    "expected_root_cause": "database_connection_pool_exhaustion",
+    "events": [
+      {
+        "service": "payment-api",
+        "severity": "ERROR",
+        "message": "payment writes stalled because no application database sessions were free"
+      }
+    ]
+  },
+  {
+    "incident_id": "dev-db-002",
+    "expected_root_cause": "database_connection_pool_exhaustion",
+    "events": [
+      {
+        "service": "payment-api",
+        "severity": "ERROR",
+        "message": "connection acquisition waited too long while the SQL client pool was saturated"
+      }
+    ]
+  },
+  {
+    "incident_id": "dev-db-003",
+    "expected_root_cause": "database_connection_pool_exhaustion",
+    "events": [
+      {
+        "service": "payment-api",
+        "severity": "ERROR",
+        "message": "persistence requests failed because all database clients were occupied"
+      }
+    ]
+  },
+  {
+    "incident_id": "dev-network-001",
+    "expected_root_cause": "dns_or_network_failure",
+    "events": [
+      {
+        "service": "checkout-api",
+        "severity": "ERROR",
+        "message": "service discovery returned no address for inventory.internal"
+      }
+    ]
+  },
+  {
+    "incident_id": "dev-network-002",
+    "expected_root_cause": "dns_or_network_failure",
+    "events": [
+      {
+        "service": "checkout-api",
+        "severity": "ERROR",
+        "message": "the application could not look up the inventory dependency hostname"
+      }
+    ]
+  },
+  {
+    "incident_id": "dev-network-003",
+    "expected_root_cause": "dns_or_network_failure",
+    "events": [
+      {
+        "service": "checkout-api",
+        "severity": "WARN",
+        "message": "remote dependency address could not be discovered before the request failed"
+      }
+    ]
+  },
+  {
+    "incident_id": "dev-deploy-001",
+    "expected_root_cause": "recent_deployment_regression",
+    "events": [
+      {
+        "service": "orders-api",
+        "severity": "ERROR",
+        "message": "the new application build began rejecting order payload fields"
+      }
+    ]
+  },
+  {
+    "incident_id": "dev-deploy-002",
+    "expected_root_cause": "recent_deployment_regression",
+    "events": [
+      {
+        "service": "orders-api",
+        "severity": "ERROR",
+        "message": "order submission failures appeared immediately after the release was promoted"
+      }
+    ]
+  },
+  {
+    "incident_id": "dev-deploy-003",
+    "expected_root_cause": "recent_deployment_regression",
+    "events": [
+      {
+        "service": "orders-api",
+        "severity": "ERROR",
+        "message": "a recently deployed request-contract change broke order creation"
+      }
+    ]
+  },
+  {
+    "incident_id": "dev-unknown-001",
+    "expected_root_cause": null,
+    "events": [
+      {
+        "service": "reporting-api",
+        "severity": "ERROR",
+        "message": "permission denied while writing an archived report"
+      }
+    ]
+  },
+  {
+    "incident_id": "dev-unknown-002",
+    "expected_root_cause": null,
+    "events": [
+      {
+        "service": "analytics-worker",
+        "severity": "ERROR",
+        "message": "worker stopped after storage device input output failure"
+      }
+    ]
+  },
+  {
+    "incident_id": "dev-unknown-003",
+    "expected_root_cause": null,
+    "events": [
+      {
+        "service": "auth-api",
+        "severity": "ERROR",
+        "message": "authentication signing key could not be loaded from secure storage"
+      }
+    ]
+  }
+]

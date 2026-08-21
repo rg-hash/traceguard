@@ -1,74 +1,47 @@
 from __future__ import annotations
+
 import json
+import time
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
+
 import joblib
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
-import time
+
+from app.bgl_triage import get_bgl_triage_service
 from app.config import DATASET_PATH, MODEL_PATH
 from app.data import load_dataset
-from app.ml import analyze, train_models
-from app.evidence import rank_evidence_lines
-from app.hybrid_retrieval import HybridRetriever
-from app.log_normalization import incident_to_text
 from app.database import (
     initialize_database,
     list_incident_decisions,
+    list_investigation_feedback,
     save_incident_decision,
+    save_investigation_feedback,
 )
-from fastapi.staticfiles import StaticFiles
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from contextlib import asynccontextmanager
-from app.bgl_triage import get_bgl_triage_service
+from app.evidence import rank_evidence_lines
+from app.hybrid_retrieval import HybridRetriever
+from app.investigation import get_investigation_service
+from app.log_normalization import incident_to_text
 from app.metrics import (
-    HDFS_DECISIONS_PERSISTED,
-    HDFS_RETRIEVAL_FAILURES,
-    HDFS_RETRIEVAL_LATENCY_SECONDS,
-    HDFS_RETRIEVAL_REQUESTS,
     BGL_DECISIONS_PERSISTED,
     BGL_HUMAN_REVIEWS,
     BGL_TRIAGE_FAILURES,
     BGL_TRIAGE_LATENCY_SECONDS,
     BGL_TRIAGE_REQUESTS,
+    HDFS_DECISIONS_PERSISTED,
+    HDFS_RETRIEVAL_FAILURES,
+    HDFS_RETRIEVAL_LATENCY_SECONDS,
+    HDFS_RETRIEVAL_REQUESTS,
 )
+from app.ml import analyze, train_models
 
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    """Prepare required services before the API accepts traffic."""
-    initialize_database()
-    get_hdfs_retriever()
-    get_bgl_triage_service()
-    yield
-
-
-app = FastAPI(
-    title="TraceGuard",
-    version="1.0.0",
-    description="Evidence-grounded AIOps incident analysis.",
-    lifespan=lifespan,
-)
-class LogEvent(BaseModel):
-    timestamp: str = ""
-    service: str = ""
-    severity: str = ""
-    message: str = Field(min_length=1, max_length=4000)
-
-
-
-class IncidentRequest(BaseModel):
-    incident_id: str = Field(min_length=1, max_length=100)
-    events: list[LogEvent] = Field(min_length=1, max_length=500)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-app.mount(
-    "/dashboard",
-    StaticFiles(
-        directory=PROJECT_ROOT / "static",
-        html=True,
-    ),
-    name="dashboard",
-)
 
 HDFS_TRAIN_DOCUMENTS_PATH = (
     PROJECT_ROOT / "data/index/hdfs_hybrid_train_documents.jsonl"
@@ -79,13 +52,127 @@ HDFS_MINIMUM_HYBRID_SCORE = 0.05
 HDFS_TOP_K = 3
 
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Prepare required services before the API accepts traffic."""
+    initialize_database()
+    get_hdfs_retriever()
+    get_bgl_triage_service()
+    get_investigation_service()
+    yield
+
+
+app = FastAPI(
+    title="TraceGuard",
+    version="1.0.0",
+    description="Evidence-grounded AIOps incident analysis.",
+    lifespan=lifespan,
+)
+
+app.mount(
+    "/dashboard",
+    StaticFiles(
+        directory=PROJECT_ROOT / "static",
+        html=True,
+    ),
+    name="dashboard",
+)
+
+
+class LogEvent(BaseModel):
+    timestamp: str = ""
+    service: str = ""
+    severity: str = ""
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class IncidentRequest(BaseModel):
+    incident_id: str = Field(min_length=1, max_length=100)
+    events: list[LogEvent] = Field(min_length=1, max_length=500)
+
+
+class TriageEvidence(BaseModel):
+    historical_incident_id: str
+    historical_label: str
+    similarity: float | None = None
+    cited_templates: list[dict[str, Any]] = Field(
+        default_factory=list
+    )
+
+
+class TriageContext(BaseModel):
+    source: str = "bgl_evidence_grounded_triage"
+
+    classifier_anomaly_probability: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
+
+    classifier_prediction: str | None = None
+
+    decision_checks: dict[str, Any] = Field(
+        default_factory=dict
+    )
+
+    evidence: list[TriageEvidence] = Field(
+        default_factory=list
+    )
+
+
+class InvestigationRequest(IncidentRequest):
+    triage_recommendation: str = Field(
+        default="NEEDS_HUMAN_REVIEW",
+        pattern="^(LIKELY_ANOMALY|NEEDS_HUMAN_REVIEW)$",
+    )
+
+    triage_context: TriageContext | None = None
+
+class InvestigationFeedbackRequest(BaseModel):
+    incident_id: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+    triage_recommendation: str = Field(
+        pattern="^(LIKELY_ANOMALY|NEEDS_HUMAN_REVIEW)$",
+    )
+
+    hypothesis: str | None = Field(
+        default=None,
+        max_length=200,
+    )
+
+    hypothesis_accepted: bool | None = None
+
+    confirmed_root_cause: str | None = Field(
+        default=None,
+        max_length=200,
+    )
+
+    resolution: str | None = Field(
+        default=None,
+        max_length=5000,
+    )
+
+    usefulness_rating: int | None = Field(
+        default=None,
+        ge=1,
+        le=5,
+    )
+
+    reviewer_note: str | None = Field(
+        default=None,
+        max_length=5000,
+    )
+
 @lru_cache
 def get_hdfs_retriever() -> HybridRetriever:
     """
-    Load the historical HDFS training evidence once per API process.
+    Load historical HDFS training evidence once per API process.
 
-    The index contains only the 1,200 historic training incidents used in
-    the validated experiment. It never includes validation or test data.
+    Only training incidents are indexed. Validation and test data
+    are never included in the deployed evidence index.
     """
     if not HDFS_TRAIN_DOCUMENTS_PATH.exists():
         raise RuntimeError(
@@ -93,7 +180,10 @@ def get_hdfs_retriever() -> HybridRetriever:
             "scripts/build_hdfs_hybrid_index.py first."
         )
 
-    with HDFS_TRAIN_DOCUMENTS_PATH.open("r", encoding="utf-8") as file:
+    with HDFS_TRAIN_DOCUMENTS_PATH.open(
+        "r",
+        encoding="utf-8",
+    ) as file:
         documents = [
             json.loads(line)
             for line in file
@@ -103,23 +193,33 @@ def get_hdfs_retriever() -> HybridRetriever:
     retriever = HybridRetriever(
         semantic_weight=HDFS_SEMANTIC_WEIGHT
     )
+
     retriever.build_index(documents)
 
     return retriever
 
+
 def get_models():
     if MODEL_PATH.exists():
         return joblib.load(MODEL_PATH)
+
     rows = load_dataset(DATASET_PATH)
     models = train_models(rows)
-    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    MODEL_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
     joblib.dump(models, MODEL_PATH)
+
     return models
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
 
 @app.get("/metrics", include_in_schema=False)
 def metrics() -> Response:
@@ -129,15 +229,14 @@ def metrics() -> Response:
         media_type=CONTENT_TYPE_LATEST,
     )
 
+
 @app.get("/decisions")
 def decisions(
     recommendation: str | None = None,
     source: str | None = None,
     limit: int = 20,
 ) -> list[dict]:
-    """
-    Return recently persisted triage decisions for the operator dashboard.
-    """
+    """Return recently persisted triage decisions."""
     if limit < 1 or limit > 100:
         raise HTTPException(
             status_code=400,
@@ -156,33 +255,148 @@ def decisions(
             detail="Unable to load persisted decisions.",
         ) from error
 
+
 @app.get("/incidents")
 def incidents() -> list[dict[str, str | int]]:
-    return [{key: row[key] for key in ("incident_id", "is_anomaly", "root_cause")} for row in load_dataset(DATASET_PATH)]
+    return [
+        {
+            key: row[key]
+            for key in (
+                "incident_id",
+                "is_anomaly",
+                "root_cause",
+            )
+        }
+        for row in load_dataset(DATASET_PATH)
+    ]
 
 
 @app.get("/incidents/{incident_id}/analyze")
 def analyze_incident(incident_id: str) -> dict:
-    incident = next((row for row in load_dataset(DATASET_PATH) if row["incident_id"] == incident_id), None)
+    incident = next(
+        (
+            row
+            for row in load_dataset(DATASET_PATH)
+            if row["incident_id"] == incident_id
+        ),
+        None,
+    )
+
     if incident is None:
-        raise HTTPException(status_code=404, detail="Incident not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Incident not found",
+        )
+
     return analyze(incident, get_models())
 
 
 @app.post("/analyze")
 def analyze_payload(payload: IncidentRequest) -> dict:
-    """Analyze caller-supplied logs. This endpoint never performs remediation."""
-    incident = {"incident_id": payload.incident_id, "events": [event.model_dump() for event in payload.events]}
+    """Analyze caller-supplied logs. Never performs remediation."""
+    incident = {
+        "incident_id": payload.incident_id,
+        "events": [
+            event.model_dump()
+            for event in payload.events
+        ],
+    }
+
     return analyze(incident, get_models())
+
+
+@app.post("/investigate")
+def investigate(payload: InvestigationRequest) -> dict:
+    """
+    Create a read-only, evidence-grounded debugging plan.
+
+    The endpoint preserves the existing BGL/HDFS triage evidence.
+    It never runs commands, restarts services, or changes production.
+    """
+    return get_investigation_service().investigate(
+        incident_id=payload.incident_id,
+        events=[
+            event.model_dump()
+            for event in payload.events
+        ],
+        triage_recommendation=payload.triage_recommendation,
+        triage_context=(
+            payload.triage_context.model_dump()
+            if payload.triage_context
+            else {}
+        ),
+    )
+@app.post("/investigations/feedback")
+def submit_investigation_feedback(
+    payload: InvestigationFeedbackRequest,
+) -> dict[str, int | str]:
+    """
+    Store human investigation feedback.
+
+    This endpoint captures labelled outcomes; it does not automatically
+    retrain models or modify infrastructure.
+    """
+    try:
+        feedback_id = save_investigation_feedback(
+            incident_id=payload.incident_id,
+            triage_recommendation=(
+                payload.triage_recommendation
+            ),
+            hypothesis=payload.hypothesis,
+            hypothesis_accepted=(
+                payload.hypothesis_accepted
+            ),
+            confirmed_root_cause=(
+                payload.confirmed_root_cause
+            ),
+            resolution=payload.resolution,
+            usefulness_rating=payload.usefulness_rating,
+            reviewer_note=payload.reviewer_note,
+        )
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to store investigation feedback.",
+        ) from error
+
+    return {
+        "feedback_id": feedback_id,
+        "status": "stored",
+    }
+
+
+@app.get("/investigations/feedback")
+def get_investigation_feedback(
+    incident_id: str | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """Return recent human feedback for the dashboard or evaluation."""
+    if limit < 1 or limit > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="limit must be between 1 and 100.",
+        )
+
+    try:
+        return list_investigation_feedback(
+            incident_id=incident_id,
+            limit=limit,
+        )
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to load investigation feedback.",
+        ) from error
 
 @app.post("/retrieve/hdfs")
 def retrieve_hdfs_evidence(payload: IncidentRequest) -> dict:
     """
-    Retrieve historical HDFS evidence for a caller-supplied incident.
+    Retrieve historical HDFS evidence for caller-supplied logs.
 
-    This endpoint recommends triage only. It never remediates a system.
+    This endpoint recommends triage only. It never remediates systems.
     """
     started_at = time.perf_counter()
+
     incident = {
         "incident_id": payload.incident_id,
         "events": [
@@ -200,13 +414,19 @@ def retrieve_hdfs_evidence(payload: IncidentRequest) -> dict:
         )
 
     retriever = get_hdfs_retriever()
+
     matches = retriever.search(
         query_text=query_text,
         top_k=HDFS_TOP_K,
     )
 
-    evidence_labels = [match.label for match in matches]
+    evidence_labels = [
+        match.label
+        for match in matches
+    ]
+
     unanimous_evidence = len(set(evidence_labels)) == 1
+
     strong_similarity = (
         matches[0].score >= HDFS_MINIMUM_HYBRID_SCORE
     )
@@ -228,9 +448,14 @@ def retrieve_hdfs_evidence(payload: IncidentRequest) -> dict:
                 "rank": rank,
                 "historical_incident_id": match.incident_id,
                 "historical_label": (
-                    "Anomaly" if match.label == 1 else "Normal"
+                    "Anomaly"
+                    if match.label == 1
+                    else "Normal"
                 ),
-                "hybrid_similarity": round(match.score, 4),
+                "hybrid_similarity": round(
+                    match.score,
+                    4,
+                ),
                 "cited_templates": rank_evidence_lines(
                     query_text=query_text,
                     evidence_text=match.text,
@@ -239,7 +464,7 @@ def retrieve_hdfs_evidence(payload: IncidentRequest) -> dict:
             }
         )
 
-        policy = {
+    policy = {
         "semantic_weight": HDFS_SEMANTIC_WEIGHT,
         "lexical_weight": 1.0 - HDFS_SEMANTIC_WEIGHT,
         "minimum_hybrid_score": HDFS_MINIMUM_HYBRID_SCORE,
@@ -250,7 +475,10 @@ def retrieve_hdfs_evidence(payload: IncidentRequest) -> dict:
         "incident_id": payload.incident_id,
         "recommendation": recommendation,
         "policy": policy,
-        "top_hybrid_similarity": round(matches[0].score, 4),
+        "top_hybrid_similarity": round(
+            matches[0].score,
+            4,
+        ),
         "evidence_labels": evidence_labels,
         "evidence": evidence,
     }
@@ -266,7 +494,9 @@ def retrieve_hdfs_evidence(payload: IncidentRequest) -> dict:
             evidence=evidence,
         )
     except Exception as error:
-        HDFS_RETRIEVAL_FAILURES.labels(reason="database").inc()
+        HDFS_RETRIEVAL_FAILURES.labels(
+            reason="database"
+        ).inc()
 
         raise HTTPException(
             status_code=503,
@@ -287,14 +517,15 @@ def retrieve_hdfs_evidence(payload: IncidentRequest) -> dict:
 
     return response
 
+
 @app.post("/triage/bgl")
 def triage_bgl(payload: IncidentRequest) -> dict:
     """
     Safely triage caller-provided BGL log events.
 
-    The endpoint returns an automated recommendation only when the
-    classifier and three retrieved historical evidence incidents pass
-    the validated safety policy. It never performs remediation.
+    Automated recommendations require classifier confidence,
+    strong evidence similarity, unanimous top-3 evidence,
+    and agreement between classifier and evidence.
     """
     started_at = time.perf_counter()
 
@@ -309,14 +540,18 @@ def triage_bgl(payload: IncidentRequest) -> dict:
             events=incident_events,
         )
     except ValueError as error:
-        BGL_TRIAGE_FAILURES.labels(reason="invalid_input").inc()
+        BGL_TRIAGE_FAILURES.labels(
+            reason="invalid_input"
+        ).inc()
 
         raise HTTPException(
             status_code=400,
             detail=str(error),
         ) from error
     except Exception as error:
-        BGL_TRIAGE_FAILURES.labels(reason="analysis").inc()
+        BGL_TRIAGE_FAILURES.labels(
+            reason="analysis"
+        ).inc()
 
         raise HTTPException(
             status_code=503,
@@ -336,7 +571,9 @@ def triage_bgl(payload: IncidentRequest) -> dict:
             evidence=result["evidence"],
         )
     except Exception as error:
-        BGL_TRIAGE_FAILURES.labels(reason="database").inc()
+        BGL_TRIAGE_FAILURES.labels(
+            reason="database"
+        ).inc()
 
         raise HTTPException(
             status_code=503,

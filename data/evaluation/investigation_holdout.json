@@ -1,0 +1,171 @@
+[
+  {
+    "incident_id": "holdout-db-001",
+    "expected_root_cause": "database_connection_pool_exhaustion",
+    "expected_human_review": true,
+    "events": [
+      {
+        "service": "payment-api",
+        "severity": "ERROR",
+        "message": "new SQL sessions cannot be allocated and payment requests are waiting"
+      },
+      {
+        "service": "payment-api",
+        "severity": "WARN",
+        "message": "transaction retries are delayed while application connections remain occupied"
+      }
+    ]
+  },
+  {
+    "incident_id": "holdout-db-002",
+    "expected_root_cause": "database_connection_pool_exhaustion",
+    "expected_human_review": true,
+    "events": [
+      {
+        "service": "payment-api",
+        "severity": "ERROR",
+        "message": "persistence layer timed out after all client sessions were busy"
+      },
+      {
+        "service": "payment-api",
+        "severity": "ERROR",
+        "message": "unable to obtain another connection for payment processing"
+      }
+    ]
+  },
+  {
+    "incident_id": "holdout-db-003",
+    "expected_root_cause": "database_connection_pool_exhaustion",
+    "expected_human_review": true,
+    "events": [
+      {
+        "service": "payment-api",
+        "severity": "ERROR",
+        "message": "request queue grew because the database client pool reached its configured limit"
+      }
+    ]
+  },
+  {
+    "incident_id": "holdout-network-001",
+    "expected_root_cause": "dns_or_network_failure",
+    "expected_human_review": true,
+    "events": [
+      {
+        "service": "checkout-api",
+        "severity": "ERROR",
+        "message": "inventory.internal could not be resolved by the service resolver"
+      },
+      {
+        "service": "checkout-api",
+        "severity": "WARN",
+        "message": "dependency request was reset before a response was received"
+      }
+    ]
+  },
+  {
+    "incident_id": "holdout-network-002",
+    "expected_root_cause": "dns_or_network_failure",
+    "expected_human_review": true,
+    "events": [
+      {
+        "service": "checkout-api",
+        "severity": "ERROR",
+        "message": "name lookup failed for the stock dependency"
+      },
+      {
+        "service": "checkout-api",
+        "severity": "ERROR",
+        "message": "remote service call could not establish an upstream connection"
+      }
+    ]
+  },
+  {
+    "incident_id": "holdout-network-003",
+    "expected_root_cause": "dns_or_network_failure",
+    "expected_human_review": true,
+    "events": [
+      {
+        "service": "checkout-api",
+        "severity": "ERROR",
+        "message": "resolver returned no address for the inventory service host"
+      }
+    ]
+  },
+  {
+    "incident_id": "holdout-deploy-001",
+    "expected_root_cause": "recent_deployment_regression",
+    "expected_human_review": true,
+    "events": [
+      {
+        "service": "orders-api",
+        "severity": "ERROR",
+        "message": "order requests began failing immediately after build 7c2d1e was released"
+      },
+      {
+        "service": "orders-api",
+        "severity": "ERROR",
+        "message": "new request schema rejected fields accepted by the previous application version"
+      }
+    ]
+  },
+  {
+    "incident_id": "holdout-deploy-002",
+    "expected_root_cause": "recent_deployment_regression",
+    "expected_human_review": true,
+    "events": [
+      {
+        "service": "orders-api",
+        "severity": "ERROR",
+        "message": "error rate increased after the latest rollout introduced an incompatible request contract"
+      }
+    ]
+  },
+  {
+    "incident_id": "holdout-deploy-003",
+    "expected_root_cause": "recent_deployment_regression",
+    "expected_human_review": true,
+    "events": [
+      {
+        "service": "orders-api",
+        "severity": "ERROR",
+        "message": "orders endpoint rejected payloads only after commit 7c2d1e reached production"
+      }
+    ]
+  },
+  {
+    "incident_id": "holdout-unknown-001",
+    "expected_root_cause": null,
+    "expected_human_review": true,
+    "events": [
+      {
+        "service": "reporting-api",
+        "severity": "ERROR",
+        "message": "filesystem is full and report files cannot be written"
+      }
+    ]
+  },
+  {
+    "incident_id": "holdout-unknown-002",
+    "expected_root_cause": null,
+    "expected_human_review": true,
+    "events": [
+      {
+        "service": "analytics-worker",
+        "severity": "FATAL",
+        "message": "process was terminated after exceeding the memory limit"
+      }
+    ]
+  },
+  {
+    "incident_id": "holdout-unknown-003",
+    "expected_root_cause": null,
+    "expected_human_review": true,
+    "events": [
+      {
+        "service": "auth-api",
+        "severity": "ERROR",
+        "message": "TLS certificate has expired and secure handshake failed"
+      }
+    ]
+  }
+]

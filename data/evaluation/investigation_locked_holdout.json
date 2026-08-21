@@ -1,0 +1,14 @@
+[
+  {"incident_id":"locked-db-001","expected_root_cause":"database_connection_pool_exhaustion","events":[{"service":"payment-api","severity":"ERROR","message":"payment persistence is stalled because no SQL client slot is available"}]},
+  {"incident_id":"locked-db-002","expected_root_cause":"database_connection_pool_exhaustion","events":[{"service":"payment-api","severity":"ERROR","message":"new data-store session allocation is blocked by saturated application clients"}]},
+  {"incident_id":"locked-db-003","expected_root_cause":"database_connection_pool_exhaustion","events":[{"service":"payment-api","severity":"ERROR","message":"checkout writes are queued while every persistence connection remains in use"}]},
+  {"incident_id":"locked-network-001","expected_root_cause":"dns_or_network_failure","events":[{"service":"checkout-api","severity":"ERROR","message":"the catalogue service name returned no network address"}]},
+  {"incident_id":"locked-network-002","expected_root_cause":"dns_or_network_failure","events":[{"service":"checkout-api","severity":"ERROR","message":"service discovery could not find an endpoint for the inventory backend"}]},
+  {"incident_id":"locked-network-003","expected_root_cause":"dns_or_network_failure","events":[{"service":"checkout-api","severity":"WARN","message":"dependency host lookup produced an empty result before the call was dropped"}]},
+  {"incident_id":"locked-deploy-001","expected_root_cause":"recent_deployment_regression","events":[{"service":"orders-api","severity":"ERROR","message":"order creation began rejecting valid client fields following the newest release"}]},
+  {"incident_id":"locked-deploy-002","expected_root_cause":"recent_deployment_regression","events":[{"service":"orders-api","severity":"ERROR","message":"a change promoted to production caused incompatibility in the order payload contract"}]},
+  {"incident_id":"locked-deploy-003","expected_root_cause":"recent_deployment_regression","events":[{"service":"orders-api","severity":"ERROR","message":"requests that passed yesterday fail after the current version rollout"}]},
+  {"incident_id":"locked-unknown-001","expected_root_cause":null,"events":[{"service":"media-api","severity":"ERROR","message":"object storage returned an access denied response for the upload bucket"}]},
+  {"incident_id":"locked-unknown-002","expected_root_cause":null,"events":[{"service":"search-worker","severity":"FATAL","message":"the process ended after a segmentation fault in the indexing library"}]},
+  {"incident_id":"locked-unknown-003","expected_root_cause":null,"events":[{"service":"identity-api","severity":"ERROR","message":"the cryptographic key is malformed and token signing cannot continue"}]}
+]

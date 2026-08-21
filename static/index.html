@@ -6,7 +6,7 @@
     name="viewport"
     content="width=device-width, initial-scale=1"
   >
-  <title>TraceGuard | Safe BGL Log Triage</title>
+  <title>TraceGuard | Safe Incident Investigation</title>
 
   <style>
     :root {
@@ -83,7 +83,8 @@
     }
 
     textarea,
-    input {
+    input,
+    select {
       width: 100%;
       margin-bottom: 14px;
       padding: 12px;
@@ -114,6 +115,11 @@
 
     button:hover {
       filter: brightness(1.08);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
     }
 
     button.secondary {
@@ -209,6 +215,38 @@
       background: #10182d;
     }
 
+    .investigation-section {
+      margin-top: 28px;
+    }
+
+    .hypothesis {
+      margin-top: 12px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #10182d;
+    }
+
+    .feedback-form {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .checkbox-label input {
+      width: auto;
+      margin: 0;
+    }
+
     code {
       white-space: pre-wrap;
       color: #c8d8f8;
@@ -239,9 +277,9 @@
   <header>
     <h1>TraceGuard</h1>
     <p class="subtitle">
-      Evidence-grounded BGL log triage. The system automates a decision
-      only when model confidence and historical evidence satisfy the
-      safety policy; otherwise, it requests human review.
+      Evidence-grounded log triage and read-only incident investigation.
+      TraceGuard retrieves historical evidence and approved runbooks, but
+      always requires engineer review before any operational action.
     </p>
   </header>
 
@@ -254,6 +292,13 @@
         <input
           id="incidentId"
           value="dashboard-bgl-demo-001"
+          maxlength="100"
+        >
+
+        <label for="serviceName">Affected service</label>
+        <input
+          id="serviceName"
+          value="payment-api"
           maxlength="100"
         >
 
@@ -291,6 +336,78 @@
       </section>
     </div>
 
+    <section class="card investigation-section">
+      <h2>Investigation Agent</h2>
+      <p class="muted">
+        After an anomaly or deferred triage result, generate a read-only
+        debugging plan. The agent never executes commands or changes
+        infrastructure.
+      </p>
+
+      <button id="investigateButton" disabled>
+        Investigate triaged incident
+      </button>
+      <button id="manualInvestigateButton" class="secondary">
+        Investigate unclassified logs
+      </button>
+
+      <p id="investigationEmpty" class="muted">
+        Run BGL triage first. Investigation is available for anomaly and
+        human-review decisions only.
+      </p>
+
+      <div id="investigationResult" class="hidden">
+        <div id="investigationBanner" class="result-banner review"></div>
+
+        <div id="investigationMetrics" class="metric-grid"></div>
+
+        <h3>Ranked hypotheses</h3>
+        <div id="hypotheses"></div>
+
+        <h3>Approved investigation checks</h3>
+        <div id="recommendedChecks"></div>
+
+        <h3>Retrieved investigation evidence</h3>
+        <div id="investigationEvidence"></div>
+
+        <form id="feedbackForm" class="feedback-form">
+          <h3>Engineer feedback</h3>
+
+          <label for="feedbackHypothesis">Reviewed hypothesis</label>
+          <select id="feedbackHypothesis"></select>
+
+          <label class="checkbox-label" for="hypothesisAccepted">
+            <input id="hypothesisAccepted" type="checkbox">
+            The reviewed hypothesis was accepted
+          </label>
+
+          <label for="confirmedRootCause">Confirmed root cause</label>
+          <input id="confirmedRootCause" maxlength="200">
+
+          <label for="resolution">Resolution</label>
+          <textarea id="resolution" maxlength="5000"></textarea>
+
+          <label for="usefulnessRating">Suggestion usefulness</label>
+          <select id="usefulnessRating">
+            <option value="">Not rated</option>
+            <option value="1">1 — Not useful</option>
+            <option value="2">2 — Slightly useful</option>
+            <option value="3">3 — Moderately useful</option>
+            <option value="4">4 — Useful</option>
+            <option value="5">5 — Very useful</option>
+          </select>
+
+          <label for="reviewerNote">Reviewer note</label>
+          <textarea id="reviewerNote" maxlength="5000"></textarea>
+
+          <button id="saveFeedbackButton" type="submit">
+            Save feedback
+          </button>
+          <p id="feedbackStatus" class="muted"></p>
+        </form>
+      </div>
+    </section>
+
     <div class="queue-header">
       <div>
         <h2>Human-review queue</h2>
@@ -316,6 +433,15 @@
     const loadReviewsButton = document.getElementById(
       "loadReviewsButton"
     );
+    const investigateButton = document.getElementById(
+      "investigateButton"
+    );
+    const manualInvestigateButton = document.getElementById(
+      "manualInvestigateButton"
+    );
+    const feedbackForm = document.getElementById("feedbackForm");
+    let latestTriageResult = null;
+    let latestInvestigationResult = null;
 
     function escapeHtml(value) {
       return String(value)
@@ -345,6 +471,7 @@
     }
 
     function showResult(result) {
+      latestTriageResult = result;
       document.getElementById("emptyState").classList.add("hidden");
       document.getElementById("result").classList.remove("hidden");
 
@@ -412,6 +539,83 @@
           </article>
         `)
         .join("");
+
+      const canInvestigate = [
+        "LIKELY_ANOMALY",
+        "NEEDS_HUMAN_REVIEW",
+      ].includes(result.recommendation);
+
+      investigateButton.disabled = !canInvestigate;
+      document.getElementById("investigationEmpty").textContent = canInvestigate
+        ? "Triage completed. Generate a read-only investigation plan."
+        : "This incident is likely normal, so investigation is not needed.";
+    }
+
+    function renderInvestigation(result) {
+      latestInvestigationResult = result;
+      document.getElementById("investigationEmpty").classList.add("hidden");
+      document.getElementById("investigationResult").classList.remove("hidden");
+      document.getElementById("investigationBanner").textContent =
+        result.decision.replaceAll("_", " ");
+
+      const triage = result.triage_context || {};
+      const policy = result.retrieval_policy || {};
+
+      document.getElementById("investigationMetrics").innerHTML = `
+        <div class="metric">
+          <span>Affected service</span>
+          <strong>${escapeHtml(result.summary.affected_service)}</strong>
+        </div>
+        <div class="metric">
+          <span>Error events</span>
+          <strong>${escapeHtml(result.summary.error_count)}</strong>
+        </div>
+        <div class="metric">
+          <span>Original anomaly probability</span>
+          <strong>${triage.classifier_anomaly_probability == null
+            ? "Not provided"
+            : `${(triage.classifier_anomaly_probability * 100).toFixed(1)}%`}</strong>
+        </div>
+        <div class="metric">
+          <span>Retrieval mode</span>
+          <strong>${escapeHtml(policy.method || "TF-IDF retrieval")}</strong>
+        </div>
+      `;
+
+      document.getElementById("hypotheses").innerHTML = result.hypotheses.length
+        ? result.hypotheses.map((item, index) => `
+          <article class="hypothesis">
+            <strong>#${index + 1} · ${escapeHtml(item.cause)}</strong>
+            <p class="muted">Confidence: ${(item.confidence * 100).toFixed(1)}%</p>
+            <p class="muted">${escapeHtml(item.why)}</p>
+            <p class="muted">Evidence: ${item.evidence_ids.map(escapeHtml).join(", ")}</p>
+          </article>
+        `).join("")
+        : "<p class='muted'>No supported hypothesis was found. Engineer investigation is required.</p>";
+
+      document.getElementById("recommendedChecks").innerHTML = result.recommended_checks.length
+        ? result.recommended_checks.map((item) => `
+          <article class="evidence-card">
+            <strong>${escapeHtml(item.step)}</strong>
+            <p class="muted">Approved runbook: ${escapeHtml(item.source_id)}</p>
+          </article>
+        `).join("")
+        : "<p class='muted'>No runbook checks are available for this evidence set.</p>";
+
+      document.getElementById("investigationEvidence").innerHTML = result.evidence
+        .map((item) => `
+          <article class="evidence-card">
+            <strong>${escapeHtml(item.id)} · ${escapeHtml(item.title)}</strong>
+            <p class="muted">Hybrid similarity: ${Number(item.hybrid_similarity).toFixed(4)}</p>
+            ${item.resolution ? `<p class="muted">Prior resolution: ${escapeHtml(item.resolution)}</p>` : ""}
+          </article>
+        `).join("") || "<p class='muted'>No approved evidence was retrieved.</p>";
+
+      const hypothesisSelect = document.getElementById("feedbackHypothesis");
+      hypothesisSelect.innerHTML = "<option value=''>No hypothesis selected</option>"
+        + result.hypotheses.map((item) => `
+          <option value="${escapeHtml(item.cause)}">${escapeHtml(item.cause)}</option>
+        `).join("");
     }
 
     async function analyzeLogs() {
@@ -455,6 +659,132 @@
       } finally {
         analyzeButton.disabled = false;
         analyzeButton.textContent = "Analyze safely";
+      }
+    }
+
+    async function requestInvestigation(triageRecommendation, triageContext) {
+      const incidentId = document.getElementById("incidentId").value.trim();
+      const service = document.getElementById("serviceName").value.trim();
+      const events = document.getElementById("logs").value
+        .split("\n")
+        .map((message) => message.trim())
+        .filter(Boolean)
+        .map((message) => ({ message, service }));
+
+      if (!incidentId || !service || events.length === 0) {
+        alert("Provide an incident ID, service, and at least one log message.");
+        return;
+      }
+
+      investigateButton.disabled = true;
+      manualInvestigateButton.disabled = true;
+
+      try {
+        const response = await fetch("/investigate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            incident_id: incidentId,
+            events,
+            triage_recommendation: triageRecommendation,
+            triage_context: triageContext,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.detail || "Investigation request failed.");
+        }
+
+        renderInvestigation(result);
+      } catch (error) {
+        alert(error.message);
+      } finally {
+        investigateButton.disabled = !latestTriageResult || ![
+          "LIKELY_ANOMALY",
+          "NEEDS_HUMAN_REVIEW",
+        ].includes(latestTriageResult.recommendation);
+        manualInvestigateButton.disabled = false;
+        investigateButton.textContent = "Investigate triaged incident";
+      }
+    }
+
+    async function investigateIncident() {
+      if (!latestTriageResult) {
+        return;
+      }
+
+      investigateButton.textContent = "Investigating...";
+
+      await requestInvestigation(
+        latestTriageResult.recommendation,
+        {
+          source: "bgl_evidence_grounded_triage",
+          classifier_anomaly_probability: latestTriageResult.classifier_anomaly_probability,
+          classifier_prediction: latestTriageResult.classifier_prediction,
+          decision_checks: latestTriageResult.decision_checks,
+          evidence: latestTriageResult.evidence,
+        }
+      );
+    }
+
+    async function investigateUnclassifiedLogs() {
+      manualInvestigateButton.textContent = "Investigating...";
+
+      await requestInvestigation(
+        "NEEDS_HUMAN_REVIEW",
+        {
+          source: "operator_reported_unclassified_logs",
+          decision_checks: {
+            reason: "No target-domain anomaly model was supplied; human review was requested by the operator.",
+          },
+          evidence: [],
+        }
+      );
+
+      manualInvestigateButton.textContent = "Investigate unclassified logs";
+    }
+
+    async function saveFeedback(event) {
+      event.preventDefault();
+
+      if (!latestInvestigationResult) {
+        return;
+      }
+
+      const button = document.getElementById("saveFeedbackButton");
+      const status = document.getElementById("feedbackStatus");
+      button.disabled = true;
+      status.textContent = "Saving feedback...";
+
+      try {
+        const rating = document.getElementById("usefulnessRating").value;
+        const response = await fetch("/investigations/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            incident_id: latestInvestigationResult.incident_id,
+            triage_recommendation: latestInvestigationResult.triage_recommendation,
+            hypothesis: document.getElementById("feedbackHypothesis").value || null,
+            hypothesis_accepted: document.getElementById("hypothesisAccepted").checked,
+            confirmed_root_cause: document.getElementById("confirmedRootCause").value.trim() || null,
+            resolution: document.getElementById("resolution").value.trim() || null,
+            usefulness_rating: rating ? Number(rating) : null,
+            reviewer_note: document.getElementById("reviewerNote").value.trim() || null,
+          }),
+        });
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.detail || "Unable to save feedback.");
+        }
+
+        status.textContent = `Feedback saved as record #${result.feedback_id}.`;
+      } catch (error) {
+        status.textContent = error.message;
+      } finally {
+        button.disabled = false;
       }
     }
 
@@ -508,6 +838,12 @@
     }
 
     analyzeButton.addEventListener("click", analyzeLogs);
+    investigateButton.addEventListener("click", investigateIncident);
+    manualInvestigateButton.addEventListener(
+      "click",
+      investigateUnclassifiedLogs
+    );
+    feedbackForm.addEventListener("submit", saveFeedback);
     loadReviewsButton.addEventListener("click", loadReviewQueue);
   </script>
 </body>

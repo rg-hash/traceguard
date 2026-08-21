@@ -44,6 +44,44 @@ TraceGuard implements this workflow as a deployable FastAPI application with Pos
 - MLflow experiment tracking
 - FastAPI documentation and an interactive browser dashboard
 - Temporal evaluation, cross-domain transfer experiments, OOD detection, few-shot adaptation, and locked-holdout evaluation
+- **Investigation Agent:** a LangGraph workflow that summarizes anomalous logs, retrieves incidents and runbooks, correlates deployments, ranks evidence-backed hypotheses, and returns a read-only debugging plan for engineer review
+
+---
+
+## Investigation Agent
+
+When a triage result is `LIKELY_ANOMALY` or `NEEDS_HUMAN_REVIEW`, call
+`POST /investigate` to create an engineering investigation plan. The agent is
+strictly read-only: it cannot execute commands, restart services, roll back a
+deployment, or change infrastructure.
+
+```text
+logs → incident summary → hybrid evidence retrieval → deployment context
+     → deterministic hypothesis ranking → cited runbook checks → engineer review
+```
+
+The initial demo knowledge base includes database connection-pool, DNS/network,
+and post-deployment regression incidents, plus their approved runbooks. It is
+deliberately small and versioned so the workflow can be tested end-to-end before
+connecting Jira, GitHub, Kubernetes, or an incident-management platform.
+
+Example request:
+
+```json
+{
+  "incident_id": "payment-incident-1",
+  "triage_recommendation": "LIKELY_ANOMALY",
+  "events": [{
+    "timestamp": "2026-08-20T10:08:00Z",
+    "service": "payment-api",
+    "message": "ERROR database connection timeout; connection pool exhausted"
+  }]
+}
+```
+
+The response contains a timestamped incident summary, retrieved incident and
+runbook IDs, ranked hypotheses, evidence-linked diagnostic checks, and the
+fixed decision `ENGINEER_REVIEW_REQUIRED`.
 
 ---
 

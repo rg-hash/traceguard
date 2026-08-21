@@ -1,0 +1,104 @@
+[
+  {
+    "incident_id": "eval-db-001",
+    "triage_recommendation": "LIKELY_ANOMALY",
+    "expected_root_cause": "database_connection_pool_exhaustion",
+    "expected_evidence_id": "INC-DB-001",
+    "events": [
+      {
+        "timestamp": "2026-08-21T10:00:00Z",
+        "service": "payment-api",
+        "severity": "ERROR",
+        "message": "database request timed out because the connection pool has no available connections"
+      },
+      {
+        "timestamp": "2026-08-21T10:00:10Z",
+        "service": "payment-api",
+        "severity": "ERROR",
+        "message": "payment retry failed after database connection timeout"
+      }
+    ]
+  },
+  {
+    "incident_id": "eval-db-002",
+    "triage_recommendation": "NEEDS_HUMAN_REVIEW",
+    "expected_root_cause": "database_connection_pool_exhaustion",
+    "expected_evidence_id": "INC-DB-001",
+    "events": [
+      {
+        "timestamp": "2026-08-21T11:00:00Z",
+        "service": "payment-api",
+        "severity": "ERROR",
+        "message": "database refused a new connection and application pool utilization reached capacity"
+      }
+    ]
+  },
+  {
+    "incident_id": "eval-network-001",
+    "triage_recommendation": "LIKELY_ANOMALY",
+    "expected_root_cause": "dns_or_network_failure",
+    "expected_evidence_id": "INC-NET-002",
+    "events": [
+      {
+        "timestamp": "2026-08-21T12:00:00Z",
+        "service": "checkout-api",
+        "severity": "ERROR",
+        "message": "dns resolution failure: inventory host not found"
+      },
+      {
+        "timestamp": "2026-08-21T12:00:08Z",
+        "service": "checkout-api",
+        "severity": "WARN",
+        "message": "upstream connection reset while calling inventory dependency"
+      }
+    ]
+  },
+  {
+    "incident_id": "eval-network-002",
+    "triage_recommendation": "NEEDS_HUMAN_REVIEW",
+    "expected_root_cause": "dns_or_network_failure",
+    "expected_evidence_id": "INC-NET-002",
+    "events": [
+      {
+        "timestamp": "2026-08-21T13:00:00Z",
+        "service": "checkout-api",
+        "severity": "ERROR",
+        "message": "network upstream reset after resolver could not resolve dependency host"
+      }
+    ]
+  },
+  {
+    "incident_id": "eval-deploy-001",
+    "triage_recommendation": "LIKELY_ANOMALY",
+    "expected_root_cause": "recent_deployment_regression",
+    "expected_evidence_id": "INC-DEPLOY-003",
+    "events": [
+      {
+        "timestamp": "2026-08-21T14:00:00Z",
+        "service": "orders-api",
+        "severity": "ERROR",
+        "message": "validation exception started after deployment release"
+      },
+      {
+        "timestamp": "2026-08-21T14:00:05Z",
+        "service": "orders-api",
+        "severity": "ERROR",
+        "message": "order API error rate increased after the new deployment"
+      }
+    ]
+  },
+  {
+    "incident_id": "eval-deploy-002",
+    "triage_recommendation": "NEEDS_HUMAN_REVIEW",
+    "expected_root_cause": "recent_deployment_regression",
+    "expected_evidence_id": "INC-DEPLOY-003",
+    "events": [
+      {
+        "timestamp": "2026-08-21T15:00:00Z",
+        "service": "orders-api",
+        "severity": "ERROR",
+        "message": "request validation exception detected after release rollout"
+      }
+    ]
+  }
+]
