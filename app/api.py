@@ -13,6 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
 
+from app.agentic_explanation import (
+    get_agentic_explanation_service,
+)
 from app.bgl_triage import get_bgl_triage_service
 from app.config import DATASET_PATH, MODEL_PATH
 from app.data import load_dataset
@@ -211,6 +214,16 @@ class InvestigationFeedbackRequest(BaseModel):
 
     triage_recommendation: str = Field(
         pattern="^(LIKELY_ANOMALY|NEEDS_HUMAN_REVIEW)$",
+    )
+
+    final_anomaly_label: str | None = Field(
+        default=None,
+        pattern="^(ANOMALY|NORMAL|UNCERTAIN)$",
+    )
+
+    incident_events: list[LogEvent] = Field(
+        min_length=1,
+        max_length=500,
     )
 
     hypothesis: str | None = Field(
@@ -425,6 +438,24 @@ def investigate(payload: InvestigationRequest) -> dict:
     return result
 
 
+@app.post("/investigate/agentic")
+def investigate_agentically(
+    payload: InvestigationRequest,
+) -> dict:
+    """
+    Add an optional LLM explanation to a safe investigation result.
+
+    The LLM has no operational tools. Deterministic validation rejects any
+    citation outside TraceGuard's already retrieved evidence ledger.
+    """
+    result = investigate(payload)
+    result["agentic_explanation"] = (
+        get_agentic_explanation_service().explain(result)
+    )
+
+    return result
+
+
 @app.post("/organizations/onboard")
 def onboard_organization(
     payload: OrganizationOnboardingRequest,
@@ -482,15 +513,17 @@ def organizations(limit: int = 50) -> list[dict]:
             status_code=503,
             detail="Unable to load organization profiles.",
         ) from error
+
+
 @app.post("/investigations/feedback")
 def submit_investigation_feedback(
     payload: InvestigationFeedbackRequest,
 ) -> dict[str, int | str]:
     """
-    Store human investigation feedback.
+    Store verified human feedback after an investigation.
 
-    This endpoint captures labelled outcomes; it does not automatically
-    retrain models or modify infrastructure.
+    Feedback becomes approved data for later evaluation and controlled
+    retraining. It never triggers automatic model retraining.
     """
     try:
         feedback_id = save_investigation_feedback(
@@ -499,6 +532,13 @@ def submit_investigation_feedback(
             triage_recommendation=(
                 payload.triage_recommendation
             ),
+            final_anomaly_label=(
+                payload.final_anomaly_label
+            ),
+            incident_events=[
+                event.model_dump()
+                for event in payload.incident_events
+            ],
             hypothesis=payload.hypothesis,
             hypothesis_accepted=(
                 payload.hypothesis_accepted
@@ -520,7 +560,6 @@ def submit_investigation_feedback(
         "feedback_id": feedback_id,
         "status": "stored",
     }
-
 
 @app.get("/investigations/feedback")
 def get_investigation_feedback(

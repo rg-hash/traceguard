@@ -228,7 +228,19 @@ def test_feedback_api_stores_human_label(monkeypatch):
             "/investigations/feedback",
             json={
                 "incident_id": "payment-incident-001",
+                "organization_id": "acme-shop",
                 "triage_recommendation": "LIKELY_ANOMALY",
+                "final_anomaly_label": "ANOMALY",
+                "incident_events": [
+                    {
+                        "service": "payment-api",
+                        "severity": "ERROR",
+                        "message": (
+                            "database connection timeout; "
+                            "connection pool exhausted"
+                        ),
+                    }
+                ],
                 "hypothesis": (
                     "database_connection_pool_exhaustion"
                 ),
@@ -255,6 +267,10 @@ def test_feedback_api_stores_human_label(monkeypatch):
     }
 
     assert saved["incident_id"] == "payment-incident-001"
+
+    assert saved["final_anomaly_label"] == "ANOMALY"
+
+    assert saved["incident_events"][0]["service"] == "payment-api"
 
     assert saved["hypothesis_accepted"] is True
 

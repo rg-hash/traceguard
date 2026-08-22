@@ -150,6 +150,24 @@ TraceGuard returns:
 
 No remediation action is executed.
 
+### Optional LLM explanation agent
+
+`POST /investigate/agentic` first runs the same evidence-grounded
+investigation, then asks the organization's configured LLM to explain only the
+retrieved evidence in plain language. Configure the company's own
+OpenAI-compatible provider in `.env`:
+
+```env
+TRACEGUARD_LLM_API_KEY='company-managed-key'
+TRACEGUARD_LLM_BASE_URL='https://company-llm-gateway.example/v1'
+TRACEGUARD_EXPLANATION_MODEL='company-approved-model'
+```
+
+`TRACEGUARD_LLM_BASE_URL` is optional for the standard OpenAI API. The agent
+has no operational tools, receives a minimized evidence ledger rather than raw
+logs, must return structured JSON, and is rejected if it cites evidence outside
+the ledger. The final decision remains `ENGINEER_REVIEW_REQUIRED`.
+
 ## 5. Use the dashboard
 
 1. Open `http://127.0.0.1:8000/dashboard/`.

@@ -23,7 +23,7 @@ def initialize_database() -> None:
     Create TraceGuard tables and indexes if they do not exist.
 
     Existing installations keep their current triage records.
-    PostgreSQL safely creates only missing tables/indexes.
+    PostgreSQL safely creates only missing tables, columns, and indexes.
     """
     with psycopg.connect(
         database_url(),
@@ -72,6 +72,16 @@ def initialize_database() -> None:
 
                 triage_recommendation TEXT NOT NULL,
 
+                final_anomaly_label TEXT CHECK (
+                    final_anomaly_label IS NULL
+                    OR final_anomaly_label IN (
+                        'ANOMALY',
+                        'NORMAL',
+                        'UNCERTAIN'
+                    )
+                ),
+                incident_events JSONB NOT NULL DEFAULT '[]'::jsonb,
+
                 hypothesis TEXT,
 
                 hypothesis_accepted BOOLEAN,
@@ -92,12 +102,27 @@ def initialize_database() -> None:
             """
         )
 
-        # Supports existing local installations created before organizations
-        # were introduced.
+        # Supports databases created before organization-specific
+        # feedback and verified anomaly labels were added.
         connection.execute(
             """
             ALTER TABLE investigation_feedback
             ADD COLUMN IF NOT EXISTS organization_id TEXT
+            """
+        )
+
+        connection.execute(
+            """
+            ALTER TABLE investigation_feedback
+            ADD COLUMN IF NOT EXISTS incident_events JSONB
+            NOT NULL DEFAULT '[]'::jsonb
+            """
+        )
+
+        connection.execute(
+            """
+            ALTER TABLE investigation_feedback
+            ADD COLUMN IF NOT EXISTS final_anomaly_label TEXT
             """
         )
 
@@ -114,6 +139,14 @@ def initialize_database() -> None:
             CREATE INDEX IF NOT EXISTS
             idx_investigation_feedback_organization_id
             ON investigation_feedback (organization_id)
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS
+            idx_investigation_feedback_final_anomaly_label
+            ON investigation_feedback (final_anomaly_label)
             """
         )
 
@@ -249,6 +282,8 @@ def save_investigation_feedback(
     incident_id: str,
     organization_id: str | None,
     triage_recommendation: str,
+    final_anomaly_label: str | None,
+    incident_events: list[dict[str, Any]],
     hypothesis: str | None,
     hypothesis_accepted: bool | None,
     confirmed_root_cause: str | None,
@@ -257,10 +292,10 @@ def save_investigation_feedback(
     reviewer_note: str | None,
 ) -> int:
     """
-    Persist human feedback after an investigation.
+    Persist verified human feedback after an investigation.
 
-    This is human-labelled ground truth. It can later be used for
-    evaluation, retrieval, and carefully reviewed model improvement.
+    This data is not used for immediate online retraining. It becomes
+    a reviewed dataset for later evaluation and controlled retraining.
     """
     with psycopg.connect(
         database_url(),
@@ -272,6 +307,8 @@ def save_investigation_feedback(
                 incident_id,
                 organization_id,
                 triage_recommendation,
+                final_anomaly_label,
+                incident_events,
                 hypothesis,
                 hypothesis_accepted,
                 confirmed_root_cause,
@@ -279,13 +316,15 @@ def save_investigation_feedback(
                 usefulness_rating,
                 reviewer_note
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
                 incident_id,
                 organization_id,
                 triage_recommendation,
+                final_anomaly_label,
+                Jsonb(incident_events),
                 hypothesis,
                 hypothesis_accepted,
                 confirmed_root_cause,
@@ -324,6 +363,8 @@ def list_investigation_feedback(
             incident_id,
             organization_id,
             triage_recommendation,
+            final_anomaly_label,
+            incident_events,
             hypothesis,
             hypothesis_accepted,
             confirmed_root_cause,
@@ -342,6 +383,44 @@ def list_investigation_feedback(
         row_factory=dict_row,
     ) as connection:
         result = connection.execute(query, parameters)
+
+        return list(result.fetchall())
+
+
+def list_verified_learning_feedback(
+    *,
+    organization_id: str,
+    limit: int = 10_000,
+) -> list[dict[str, Any]]:
+    """
+    Return only human-confirmed records that are eligible for offline learning.
+
+    Uncertain records remain available for investigation review but are never
+    used as training labels. This function is intentionally used by an offline
+    script, not by the live prediction path.
+    """
+    with psycopg.connect(
+        database_url(),
+        row_factory=dict_row,
+    ) as connection:
+        result = connection.execute(
+            """
+            SELECT
+                incident_id,
+                organization_id,
+                incident_events,
+                final_anomaly_label,
+                confirmed_root_cause,
+                created_at
+            FROM investigation_feedback
+            WHERE organization_id = %s
+              AND final_anomaly_label IN ('ANOMALY', 'NORMAL')
+              AND jsonb_array_length(incident_events) > 0
+            ORDER BY created_at ASC
+            LIMIT %s
+            """,
+            (organization_id, limit),
+        )
 
         return list(result.fetchall())
 
@@ -440,7 +519,8 @@ def list_organization_profiles(
                 description,
                 knowledge_version,
                 jsonb_array_length(services) AS service_count,
-                jsonb_array_length(knowledge) AS knowledge_document_count,
+                jsonb_array_length(knowledge)
+                    AS knowledge_document_count,
                 jsonb_array_length(deployments) AS deployment_count,
                 created_at,
                 updated_at

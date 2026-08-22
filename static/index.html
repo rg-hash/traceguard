@@ -10,13 +10,13 @@
 
   <style>
     :root {
-      --bg: #0b1020;
-      --surface: #151d33;
-      --surface-2: #1c2743;
-      --text: #e8edf8;
-      --muted: #a9b5ce;
-      --border: #2c3a5e;
-      --blue: #65a9ff;
+      --bg: #09111f;
+      --surface: #101c31;
+      --surface-2: #172842;
+      --text: #edf3ff;
+      --muted: #aebcd5;
+      --border: #2a4166;
+      --blue: #72adff;
       --green: #42d392;
       --orange: #f8b84e;
       --red: #ff6b7a;
@@ -30,14 +30,17 @@
       margin: 0;
       min-height: 100vh;
       color: var(--text);
-      background: var(--bg);
+      background:
+        radial-gradient(circle at top left, #17345b 0, transparent 34rem),
+        radial-gradient(circle at top right, #18264b 0, transparent 30rem),
+        var(--bg);
       font-family: Inter, ui-sans-serif, system-ui, sans-serif;
     }
 
     header {
-      padding: 32px max(24px, calc((100vw - 1120px) / 2));
+      padding: 42px max(24px, calc((100vw - 1120px) / 2));
       border-bottom: 1px solid var(--border);
-      background: linear-gradient(120deg, #111a35, #0b1020);
+      background: rgba(9, 17, 31, 0.72);
     }
 
     h1,
@@ -58,9 +61,76 @@
       line-height: 1.6;
     }
 
+    .eyebrow {
+      margin-bottom: 12px;
+      color: var(--blue);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .header-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .badge {
+      padding: 6px 10px;
+      color: #bfd7ff;
+      border: 1px solid #3a5f91;
+      border-radius: 999px;
+      background: rgba(101, 169, 255, 0.1);
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+
     main {
       width: min(1120px, calc(100% - 48px));
       margin: 28px auto 48px;
+    }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+
+    .workflow-step {
+      display: flex;
+      gap: 12px;
+      padding: 15px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(16, 28, 49, 0.82);
+    }
+
+    .workflow-step strong,
+    .workflow-step span {
+      display: block;
+    }
+
+    .workflow-step span {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.4;
+    }
+
+    .workflow-number {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      flex: 0 0 28px;
+      place-items: center;
+      color: #06111f;
+      border-radius: 50%;
+      background: var(--blue);
+      font-size: 0.82rem;
+      font-weight: 900;
     }
 
     .grid {
@@ -73,7 +143,8 @@
       padding: 22px;
       border: 1px solid var(--border);
       border-radius: 14px;
-      background: var(--surface);
+      background: rgba(16, 28, 49, 0.88);
+      box-shadow: 0 16px 42px rgba(0, 0, 0, 0.18);
     }
 
     label {
@@ -102,6 +173,13 @@
       line-height: 1.5;
     }
 
+    textarea:focus,
+    input:focus,
+    select:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(101, 169, 255, 0.16);
+    }
+
     button {
       padding: 11px 16px;
       cursor: pointer;
@@ -126,6 +204,27 @@
       color: var(--text);
       border: 1px solid var(--border);
       background: transparent;
+    }
+
+    .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .mode-note {
+      margin: 16px 0;
+      padding: 13px 14px;
+      color: var(--muted);
+      border-left: 3px solid var(--blue);
+      border-radius: 0 8px 8px 0;
+      background: rgba(101, 169, 255, 0.08);
+      line-height: 1.5;
+    }
+
+    .mode-note strong {
+      color: var(--text);
     }
 
     .hint,
@@ -266,6 +365,10 @@
         grid-template-columns: 1fr;
       }
 
+      .workflow {
+        grid-template-columns: 1fr;
+      }
+
       .metric-grid {
         grid-template-columns: 1fr;
       }
@@ -275,18 +378,52 @@
 
 <body>
   <header>
+    <p class="eyebrow">Safe, evidence-first AIOps</p>
     <h1>TraceGuard</h1>
     <p class="subtitle">
       Evidence-grounded log triage and read-only incident investigation.
       TraceGuard retrieves historical evidence and approved runbooks, but
       always requires engineer review before any operational action.
     </p>
+    <div class="header-badges">
+      <span class="badge">Read-only investigation</span>
+      <span class="badge">Evidence citations</span>
+      <span class="badge">Human approval required</span>
+    </div>
   </header>
 
   <main>
+    <section class="workflow" aria-label="TraceGuard workflow">
+      <article class="workflow-step">
+        <div class="workflow-number">1</div>
+        <div>
+          <strong>Provide incident context</strong>
+          <span>Add logs, service, and optional organization knowledge.</span>
+        </div>
+      </article>
+      <article class="workflow-step">
+        <div class="workflow-number">2</div>
+        <div>
+          <strong>Investigate safely</strong>
+          <span>Retrieve evidence and approved diagnostic checks.</span>
+        </div>
+      </article>
+      <article class="workflow-step">
+        <div class="workflow-number">3</div>
+        <div>
+          <strong>Engineer verifies</strong>
+          <span>Store the confirmed outcome for controlled learning.</span>
+        </div>
+      </article>
+    </section>
+
     <div class="grid">
       <section class="card">
-        <h2>Analyze BGL logs</h2>
+        <h2>1. Incident input</h2>
+        <p class="muted">
+          Start with application logs for investigation. BGL triage is kept
+          separately for the public research dataset.
+        </p>
 
         <label for="incidentId">Incident ID</label>
         <input
@@ -323,11 +460,21 @@
           used for offline evaluation.
         </p>
 
-        <button id="analyzeButton">Analyze safely</button>
+        <div class="mode-note">
+          <strong>Choose the right path:</strong> use <em>Generate
+          investigation plan</em> for product/application logs. Use BGL triage
+          only when testing BlueGene/L research-format logs.
+        </div>
+
+        <div class="action-row">
+          <button id="analyzeButton" class="secondary">
+            Analyze BGL research logs
+          </button>
+        </div>
       </section>
 
       <section class="card">
-        <h2>Decision</h2>
+        <h2>Research triage result</h2>
 
         <p id="emptyState" class="muted">
           Submit logs to receive a recommendation, safety checks, and
@@ -349,23 +496,25 @@
     </div>
 
     <section class="card investigation-section">
-      <h2>Investigation Agent</h2>
+      <h2>2. Investigation Agent</h2>
       <p class="muted">
         After an anomaly or deferred triage result, generate a read-only
         debugging plan. The agent never executes commands or changes
         infrastructure.
       </p>
 
-      <button id="investigateButton" disabled>
-        Investigate triaged incident
-      </button>
-      <button id="manualInvestigateButton" class="secondary">
-        Investigate unclassified logs
-      </button>
+      <div class="action-row">
+        <button id="manualInvestigateButton">
+          Generate investigation plan
+        </button>
+        <button id="investigateButton" class="secondary" disabled>
+          Use BGL triage result
+        </button>
+      </div>
 
       <p id="investigationEmpty" class="muted">
-        Run BGL triage first. Investigation is available for anomaly and
-        human-review decisions only.
+        For application logs, generate an investigation plan directly. For
+        BGL research logs, run BGL triage first.
       </p>
 
       <div id="investigationResult" class="hidden">
@@ -382,9 +531,21 @@
         <h3>Retrieved investigation evidence</h3>
         <div id="investigationEvidence"></div>
 
+        <h3>Agentic explanation</h3>
+        <button id="agenticExplainButton" class="secondary" type="button">
+          Generate evidence-cited explanation
+        </button>
+        <div id="agenticExplanation" class="muted"></div>
+
         <form id="feedbackForm" class="feedback-form">
           <h3>Engineer feedback</h3>
-
+          <label for="finalAnomalyLabel">Final anomaly decision</label>
+<select id="finalAnomalyLabel" required>
+  <option value="">Select after reviewing the incident</option>
+  <option value="ANOMALY">Confirmed anomaly</option>
+  <option value="NORMAL">Confirmed normal behaviour</option>
+  <option value="UNCERTAIN">Uncertain — needs more investigation</option>
+</select>
           <label for="feedbackHypothesis">Reviewed hypothesis</label>
           <select id="feedbackHypothesis"></select>
 
@@ -450,6 +611,9 @@
     );
     const manualInvestigateButton = document.getElementById(
       "manualInvestigateButton"
+    );
+    const agenticExplainButton = document.getElementById(
+      "agenticExplainButton"
     );
     const feedbackForm = document.getElementById("feedbackForm");
     let latestTriageResult = null;
@@ -670,7 +834,7 @@
         alert(error.message);
       } finally {
         analyzeButton.disabled = false;
-        analyzeButton.textContent = "Analyze safely";
+        analyzeButton.textContent = "Analyze BGL research logs";
       }
     }
 
@@ -722,7 +886,7 @@
           "NEEDS_HUMAN_REVIEW",
         ].includes(latestTriageResult.recommendation);
         manualInvestigateButton.disabled = false;
-        investigateButton.textContent = "Investigate triaged incident";
+        investigateButton.textContent = "Use BGL triage result";
       }
     }
 
@@ -759,51 +923,207 @@
         }
       );
 
-      manualInvestigateButton.textContent = "Investigate unclassified logs";
+      manualInvestigateButton.textContent = "Generate investigation plan";
     }
 
     async function saveFeedback(event) {
-      event.preventDefault();
+  event.preventDefault();
 
+  if (!latestInvestigationResult) {
+    return;
+  }
+
+  const button = document.getElementById("saveFeedbackButton");
+  const status = document.getElementById("feedbackStatus");
+    const finalAnomalyLabel = document.getElementById(
+      "finalAnomalyLabel"
+    ).value;
+    const service = document.getElementById(
+      "serviceName"
+    ).value.trim();
+    const incidentEvents = document.getElementById("logs").value
+      .split("\n")
+      .map((message) => message.trim())
+      .filter(Boolean)
+      .map((message) => ({ message, service }));
+
+    if (!finalAnomalyLabel) {
+    status.textContent =
+      "Select the final anomaly decision before saving feedback.";
+      return;
+    }
+
+    async function generateAgenticExplanation() {
       if (!latestInvestigationResult) {
         return;
       }
 
-      const button = document.getElementById("saveFeedbackButton");
-      const status = document.getElementById("feedbackStatus");
-      button.disabled = true;
-      status.textContent = "Saving feedback...";
+      const incidentId = document.getElementById(
+        "incidentId"
+      ).value.trim();
+      const service = document.getElementById(
+        "serviceName"
+      ).value.trim();
+      const organizationId = document.getElementById(
+        "organizationId"
+      ).value.trim();
+      const events = document.getElementById("logs").value
+        .split("\n")
+        .map((message) => message.trim())
+        .filter(Boolean)
+        .map((message) => ({ message, service }));
+      const container = document.getElementById(
+        "agenticExplanation"
+      );
+
+      if (!incidentId || !service || events.length === 0) {
+        container.textContent =
+          "Provide an incident ID, service, and at least one log message.";
+        return;
+      }
+
+      agenticExplainButton.disabled = true;
+      agenticExplainButton.textContent = "Explaining...";
+      container.textContent = "Generating an evidence-cited explanation...";
 
       try {
-        const rating = document.getElementById("usefulnessRating").value;
-        const response = await fetch("/investigations/feedback", {
+        const response = await fetch("/investigate/agentic", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            incident_id: latestInvestigationResult.incident_id,
-            organization_id: latestInvestigationResult.organization_id || null,
-            triage_recommendation: latestInvestigationResult.triage_recommendation,
-            hypothesis: document.getElementById("feedbackHypothesis").value || null,
-            hypothesis_accepted: document.getElementById("hypothesisAccepted").checked,
-            confirmed_root_cause: document.getElementById("confirmedRootCause").value.trim() || null,
-            resolution: document.getElementById("resolution").value.trim() || null,
-            usefulness_rating: rating ? Number(rating) : null,
-            reviewer_note: document.getElementById("reviewerNote").value.trim() || null,
+            incident_id: incidentId,
+            organization_id: organizationId || null,
+            events,
+            triage_recommendation: (
+              latestInvestigationResult.triage_recommendation
+            ),
+            triage_context: (
+              latestInvestigationResult.triage_context || {}
+            ),
           }),
         });
         const result = await response.json();
 
         if (!response.ok) {
-          throw new Error(result.detail || "Unable to save feedback.");
+          throw new Error(
+            result.detail || "Agentic explanation request failed."
+          );
         }
 
-        status.textContent = `Feedback saved as record #${result.feedback_id}.`;
+        const explanation = result.agentic_explanation;
+
+        if (explanation.status === "NOT_CONFIGURED") {
+          container.textContent = explanation.message;
+          return;
+        }
+
+        container.innerHTML = `
+          <article class="evidence-card">
+            <strong>Evidence-cited explanation</strong>
+            <p>${escapeHtml(explanation.explanation)}</p>
+            <p class="muted">
+              Evidence: ${explanation.cited_evidence_ids
+                .map(escapeHtml)
+                .join(", ") || "None"}
+            </p>
+            <p class="muted">
+              Uncertainty: ${escapeHtml(explanation.uncertainty)}
+            </p>
+          </article>
+        `;
       } catch (error) {
-        status.textContent = error.message;
+        container.textContent = error.message;
       } finally {
-        button.disabled = false;
+        agenticExplainButton.disabled = false;
+        agenticExplainButton.textContent = (
+          "Generate evidence-cited explanation"
+        );
       }
     }
+
+    if (!service || incidentEvents.length === 0) {
+      status.textContent =
+        "The original service and at least one log message are required.";
+      return;
+    }
+
+  button.disabled = true;
+  status.textContent = "Saving verified feedback...";
+
+  try {
+    const rating = document.getElementById(
+      "usefulnessRating"
+    ).value;
+
+    const response = await fetch(
+      "/investigations/feedback",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          incident_id: latestInvestigationResult.incident_id,
+          organization_id: (
+            latestInvestigationResult.organization_id
+            || null
+          ),
+          triage_recommendation: (
+            latestInvestigationResult.triage_recommendation
+          ),
+          final_anomaly_label: finalAnomalyLabel,
+          incident_events: incidentEvents,
+          hypothesis: (
+            document.getElementById(
+              "feedbackHypothesis"
+            ).value
+            || null
+          ),
+          hypothesis_accepted: document.getElementById(
+            "hypothesisAccepted"
+          ).checked,
+          confirmed_root_cause: (
+            document.getElementById(
+              "confirmedRootCause"
+            ).value.trim()
+            || null
+          ),
+          resolution: (
+            document.getElementById(
+              "resolution"
+            ).value.trim()
+            || null
+          ),
+          usefulness_rating: rating
+            ? Number(rating)
+            : null,
+          reviewer_note: (
+            document.getElementById(
+              "reviewerNote"
+            ).value.trim()
+            || null
+          ),
+        }),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        result.detail || "Unable to save feedback."
+      );
+    }
+
+    status.textContent = (
+      `Verified feedback saved as record #${result.feedback_id}.`
+    );
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
 
     async function loadReviewQueue() {
       const queue = document.getElementById("reviewQueue");
@@ -859,6 +1179,10 @@
     manualInvestigateButton.addEventListener(
       "click",
       investigateUnclassifiedLogs
+    );
+    agenticExplainButton.addEventListener(
+      "click",
+      generateAgenticExplanation
     );
     feedbackForm.addEventListener("submit", saveFeedback);
     loadReviewsButton.addEventListener("click", loadReviewQueue);
